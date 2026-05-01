@@ -148,7 +148,7 @@
 
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(6, 1fr);
       gap: 10px;
       margin-bottom: 16px;
     }
@@ -239,7 +239,7 @@
 
     .mini-stats {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 8px;
       padding: 10px 12px 12px;
       background: #fff;
@@ -547,12 +547,32 @@
                 <canvas id="waitChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
+                <div class="chart-title"><b>直近5分の待ち時間</b><span>平均 / 95% 分</span></div>
+                <canvas id="recentWaitChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
                 <div class="chart-title"><b>最小車間</b><span>停留所数</span></div>
                 <canvas id="headwayChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
                 <div class="chart-title"><b>スキップ乗客の損失</b><span>平均 / 最大 分</span></div>
                 <canvas id="harmChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>前車待ち遅延</b><span>累積 分</span></div>
+                <canvas id="blockedChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>団子中の前車待ち</b><span>台・分</span></div>
+                <canvas id="bunchBlockedChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>停留所別 前車待ちランキング</b><span>分</span></div>
+                <canvas id="stopBlockChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>停留所占有率</b><span>%</span></div>
+                <canvas id="occupancyChart" class="chart" width="520" height="180"></canvas>
               </div>
             </div>
           </div>
@@ -562,11 +582,12 @@
           <div class="panel">
             <div class="panel-header"><h3>なぜ団子になるのか</h3></div>
             <div class="panel-body">
-              <p>少し遅れたバスには停留所で待つ人が多く集まり、乗降時間が伸びてさらに遅れます。後続バスは前のバスに乗客を拾われるため停車時間が短くなり、結果として前のバスへ追いつきます。</p>
+              <p>少し遅れたバスには停留所で待つ人が多く集まり、乗降時間が伸びてさらに遅れます。後続バスは前のバスに乗客を拾われるため停車時間が短くなり、結果として前のバスへ追いつきます。バース数1・追い越し不可のため、追いついた後続車は停留所手前で前車待ちになり、2台がひとかたまりで動きやすくなります。</p>
               <ul>
                 <li>遅延が乗客待ち行列を増やす</li>
                 <li>乗客待ち行列が停車時間を増やす</li>
                 <li>停車時間の差が車間をさらに崩す</li>
+                <li>前車待ち遅延が後続車にも遅れを伝える</li>
               </ul>
             </div>
           </div>
@@ -590,27 +611,27 @@
               </div>
               <div class="field">
                 <label for="seedInput">ランダムシード</label>
-                <input id="seedInput" type="number" min="1" value="42">
+                <input id="seedInput" type="number" min="1" value="2">
               </div>
               <div class="field">
                 <label for="durationInput">時間 分</label>
-                <input id="durationInput" type="number" min="20" max="240" value="90">
+                <input id="durationInput" type="number" min="20" max="240" value="120">
               </div>
               <div class="field">
                 <label for="stopCountInput">バス停数</label>
-                <input id="stopCountInput" type="number" min="8" max="28" value="16">
+                <input id="stopCountInput" type="number" min="8" max="28" value="20">
               </div>
               <div class="field">
                 <label for="busCountInput">バス台数</label>
-                <input id="busCountInput" type="number" min="3" max="10" value="6">
+                <input id="busCountInput" type="number" min="3" max="10" value="5">
               </div>
               <div class="field">
                 <label for="demandInput">需要倍率</label>
-                <input id="demandInput" type="number" min="0.3" max="3" step="0.1" value="1.35">
+                <input id="demandInput" type="number" min="0.3" max="3" step="0.1" value="1">
               </div>
               <div class="field">
                 <label for="capacityInput">定員</label>
-                <input id="capacityInput" type="number" min="20" max="110" value="54">
+                <input id="capacityInput" type="number" min="20" max="110" value="40">
               </div>
               <div class="field full">
                 <label for="policySelect">制御方式</label>
@@ -622,7 +643,7 @@
               </div>
               <div class="field">
                 <label for="distanceThresholdInput">後続車間しきい値 停</label>
-                <input id="distanceThresholdInput" type="number" min="0.2" max="3" step="0.1" value="1.2">
+                <input id="distanceThresholdInput" type="number" min="0.2" max="3" step="0.1" value="2">
               </div>
               <div class="field">
                 <label for="timeThresholdInput">後続到着しきい値 分</label>
@@ -630,11 +651,7 @@
               </div>
               <div class="field">
                 <label for="delayThresholdInput">先行遅延しきい値 分</label>
-                <input id="delayThresholdInput" type="number" min="0" max="12" step="0.25" value="1.2">
-              </div>
-              <div class="field">
-                <label for="maxConsecutiveInput">最大連続スキップ</label>
-                <input id="maxConsecutiveInput" type="number" min="1" max="5" value="2">
+                <input id="delayThresholdInput" type="number" min="0" max="12" step="0.25" value="2">
               </div>
             </div>
 
@@ -647,39 +664,51 @@
                 </div>
                 <div class="field">
                   <label for="distanceInput">停留所間 km</label>
-                  <input id="distanceInput" type="number" min="0.2" max="1.5" step="0.05" value="0.48">
+                  <input id="distanceInput" type="number" min="0.2" max="1.5" step="0.05" value="0.25">
                 </div>
                 <div class="field">
                   <label for="boardTimeInput">乗車 秒/人</label>
-                  <input id="boardTimeInput" type="number" min="1" max="10" step="0.2" value="3.1">
+                  <input id="boardTimeInput" type="number" min="1" max="10" step="0.1" value="3">
                 </div>
                 <div class="field">
                   <label for="alightTimeInput">降車 秒/人</label>
-                  <input id="alightTimeInput" type="number" min="0.5" max="8" step="0.2" value="1.6">
+                  <input id="alightTimeInput" type="number" min="0.5" max="10" step="0.1" value="2.8">
                 </div>
                 <div class="field">
-                  <label for="randomDelayInput">信号・渋滞 秒/区間</label>
+                  <label for="crowdedExtraInput">混雑時 固定追加秒</label>
+                  <input id="crowdedExtraInput" type="number" min="0" max="30" step="0.5" value="5">
+                </div>
+                <div class="field">
+                  <label for="stopLossInput">減速・加速ロス 秒/停車</label>
+                  <input id="stopLossInput" type="number" min="0" max="60" step="1" value="10">
+                </div>
+                <div class="field">
+                  <label for="doorTimeInput">ドア開閉 秒/停車</label>
+                  <input id="doorTimeInput" type="number" min="0" max="20" step="0.5" value="3">
+                </div>
+                <div class="field">
+                  <label for="boardingSetupInput">乗車発生時 固定秒</label>
+                  <input id="boardingSetupInput" type="number" min="0" max="30" step="0.5" value="4">
+                </div>
+                <div class="field">
+                  <label for="alightingSetupInput">降車発生時 固定秒</label>
+                  <input id="alightingSetupInput" type="number" min="0" max="30" step="0.5" value="4">
+                </div>
+                <div class="field">
+                  <label for="crowdingThresholdInput">混雑判定しきい値</label>
+                  <input id="crowdingThresholdInput" type="number" min="0.3" max="1" step="0.05" value="0.75">
+                </div>
+                <div class="field">
+                  <label for="randomDelayInput">区間ランダム遅延 秒</label>
                   <input id="randomDelayInput" type="number" min="0" max="90" value="26">
                 </div>
                 <div class="field">
-                  <label for="hotspotInput">集中停留所</label>
-                  <input id="hotspotInput" type="text" value="3,4">
+                  <label for="hotspotInput">重要・集中停留所</label>
+                  <input id="hotspotInput" type="text" value="0,10">
                 </div>
                 <div class="field">
                   <label for="hotspotMultiplierInput">集中倍率</label>
-                  <input id="hotspotMultiplierInput" type="number" min="1" max="6" step="0.25" value="2.6">
-                </div>
-                <div class="field">
-                  <label for="forbiddenInput">スキップ禁止停留所</label>
-                  <input id="forbiddenInput" type="text" value="0,8">
-                </div>
-                <div class="field">
-                  <label for="maxSkipInput">1便最大スキップ</label>
-                  <input id="maxSkipInput" type="number" min="1" max="20" value="8">
-                </div>
-                <div class="field">
-                  <label for="cooldownInput">クールダウン 分</label>
-                  <input id="cooldownInput" type="number" min="0" max="15" step="0.5" value="2">
+                  <input id="hotspotMultiplierInput" type="number" min="1" max="6" step="0.25" value="3">
                 </div>
                 <div class="field">
                   <label for="followerLoadInput">後続混雑率しきい値</label>
@@ -687,7 +716,7 @@
                 </div>
                 <div class="field">
                   <label for="initialDelayInput">初期遅延 秒</label>
-                  <input id="initialDelayInput" type="number" min="0" max="240" value="75">
+                  <input id="initialDelayInput" type="number" min="0" max="240" value="0">
                 </div>
               </div>
             </details>
@@ -784,66 +813,61 @@
     const PRESETS = {
       urban: {
         name: "高頻度都市路線",
-        seed: 42, stopCount: 16, busCount: 6, durationMin: 90, demandMultiplier: 1.35,
-        capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.48, boardTimeSec: 3.1,
-        alightTimeSec: 1.6, randomDelaySec: 26, hotspotStops: [3, 4], hotspotMultiplier: 2.6,
-        forbiddenStops: [0, 8], initialDelaySec: 75, distanceThresholdStops: 1.2,
-        timeThresholdMin: 3, delayThresholdMin: 1.2, maxConsecutiveSkips: 2, maxSkipsPerTrip: 8,
-        cooldownMin: 2, followerLoadLimit: 0.82, policyMode: "hybrid"
+        seed: 2, stopCount: 20, busCount: 5, durationMin: 120, demandMultiplier: 1,
+        capacity: 40, baseSpeedKmh: 18, stopDistanceKm: 0.25, boardTimeSec: 3,
+        alightTimeSec: 2.8, randomDelaySec: 26, hotspotStops: [0, 10], hotspotMultiplier: 3,
+        forbiddenStops: [0, 10], initialDelaySec: 0, distanceThresholdStops: 2,
+        timeThresholdMin: 3, delayThresholdMin: 2, followerLoadLimit: 0.9, policyMode: "hybrid",
+        stopManeuverLossSec: 10, doorTimeSec: 3, boardingSetupSec: 4, alightingSetupSec: 4,
+        crowdedExtraSec: 5, crowdingThreshold: 0.75
       },
       calm: {
         name: "穏やかな需要",
         seed: 18, stopCount: 14, busCount: 5, durationMin: 80, demandMultiplier: 0.42,
-        capacity: 62, baseSpeedKmh: 20, stopDistanceKm: 0.55, boardTimeSec: 2.4,
-        alightTimeSec: 1.3, randomDelaySec: 8, hotspotStops: [4], hotspotMultiplier: 1.2,
-        forbiddenStops: [0], initialDelaySec: 15, distanceThresholdStops: 1,
-        timeThresholdMin: 2.5, delayThresholdMin: 1.5, maxConsecutiveSkips: 1, maxSkipsPerTrip: 5,
-        cooldownMin: 3, followerLoadLimit: 0.78, policyMode: "hybrid"
+        capacity: 62, baseSpeedKmh: 20, stopDistanceKm: 0.55, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 8, hotspotStops: [4], hotspotMultiplier: 1.2,
+        forbiddenStops: [4], initialDelaySec: 0, distanceThresholdStops: 1,
+        timeThresholdMin: 2.5, delayThresholdMin: 1.5, followerLoadLimit: 0.78, policyMode: "hybrid"
       },
       rush: {
         name: "通勤ラッシュ",
         seed: 77, stopCount: 18, busCount: 7, durationMin: 100, demandMultiplier: 1.95,
-        capacity: 58, baseSpeedKmh: 16, stopDistanceKm: 0.45, boardTimeSec: 3.6,
-        alightTimeSec: 1.8, randomDelaySec: 34, hotspotStops: [2, 3, 4, 5], hotspotMultiplier: 2.2,
-        forbiddenStops: [0, 9], initialDelaySec: 95, distanceThresholdStops: 1.3,
-        timeThresholdMin: 3.5, delayThresholdMin: 1, maxConsecutiveSkips: 2, maxSkipsPerTrip: 10,
-        cooldownMin: 1.5, followerLoadLimit: 0.86, policyMode: "hybrid"
+        capacity: 58, baseSpeedKmh: 16, stopDistanceKm: 0.45, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 34, hotspotStops: [2, 3, 4, 5], hotspotMultiplier: 2.2,
+        forbiddenStops: [2, 3, 4, 5], initialDelaySec: 0, distanceThresholdStops: 1.3,
+        timeThresholdMin: 3.5, delayThresholdMin: 1, followerLoadLimit: 0.86, policyMode: "hybrid"
       },
       station: {
         name: "駅前集中",
         seed: 91, stopCount: 15, busCount: 5, durationMin: 90, demandMultiplier: 1.65,
-        capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.48, boardTimeSec: 3.7,
-        alightTimeSec: 1.5, randomDelaySec: 32, hotspotStops: [5], hotspotMultiplier: 5.2,
-        forbiddenStops: [0, 5], initialDelaySec: 95, distanceThresholdStops: 1.2,
-        timeThresholdMin: 3, delayThresholdMin: 1.1, maxConsecutiveSkips: 2, maxSkipsPerTrip: 8,
-        cooldownMin: 2, followerLoadLimit: 0.82, policyMode: "hybrid"
+        capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.48, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 32, hotspotStops: [5], hotspotMultiplier: 5.2,
+        forbiddenStops: [5], initialDelaySec: 0, distanceThresholdStops: 1.2,
+        timeThresholdMin: 3, delayThresholdMin: 1.1, followerLoadLimit: 0.82, policyMode: "hybrid"
       },
       rain: {
         name: "雨の日",
         seed: 123, stopCount: 16, busCount: 6, durationMin: 90, demandMultiplier: 1.35,
-        capacity: 54, baseSpeedKmh: 15, stopDistanceKm: 0.48, boardTimeSec: 4.1,
-        alightTimeSec: 2.3, randomDelaySec: 42, hotspotStops: [3, 4], hotspotMultiplier: 2.2,
-        forbiddenStops: [0, 8], initialDelaySec: 85, distanceThresholdStops: 1.3,
-        timeThresholdMin: 3.8, delayThresholdMin: 1, maxConsecutiveSkips: 2, maxSkipsPerTrip: 9,
-        cooldownMin: 2, followerLoadLimit: 0.84, policyMode: "hybrid"
+        capacity: 54, baseSpeedKmh: 15, stopDistanceKm: 0.48, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 42, hotspotStops: [3, 4], hotspotMultiplier: 2.2,
+        forbiddenStops: [3, 4], initialDelaySec: 0, distanceThresholdStops: 1.3,
+        timeThresholdMin: 3.8, delayThresholdMin: 1, followerLoadLimit: 0.84, policyMode: "hybrid"
       },
       suburban: {
         name: "低頻度郊外路線",
         seed: 203, stopCount: 18, busCount: 3, durationMin: 120, demandMultiplier: 0.9,
-        capacity: 56, baseSpeedKmh: 25, stopDistanceKm: 0.9, boardTimeSec: 2.8,
-        alightTimeSec: 1.4, randomDelaySec: 18, hotspotStops: [6], hotspotMultiplier: 1.8,
-        forbiddenStops: [0, 9], initialDelaySec: 60, distanceThresholdStops: 1.1,
-        timeThresholdMin: 4, delayThresholdMin: 2.5, maxConsecutiveSkips: 1, maxSkipsPerTrip: 4,
-        cooldownMin: 5, followerLoadLimit: 0.72, policyMode: "time"
+        capacity: 56, baseSpeedKmh: 25, stopDistanceKm: 0.9, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 18, hotspotStops: [6], hotspotMultiplier: 1.8,
+        forbiddenStops: [6], initialDelaySec: 0, distanceThresholdStops: 1.1,
+        timeThresholdMin: 4, delayThresholdMin: 2.5, followerLoadLimit: 0.72, policyMode: "time"
       },
       important: {
         name: "重要停留所あり",
         seed: 314, stopCount: 17, busCount: 6, durationMin: 90, demandMultiplier: 1.45,
-        capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.5, boardTimeSec: 3.2,
-        alightTimeSec: 1.6, randomDelaySec: 28, hotspotStops: [3, 8, 12], hotspotMultiplier: 2.4,
-        forbiddenStops: [0, 3, 8, 12], initialDelaySec: 85, distanceThresholdStops: 1.25,
-        timeThresholdMin: 3.2, delayThresholdMin: 1.2, maxConsecutiveSkips: 2, maxSkipsPerTrip: 7,
-        cooldownMin: 2.5, followerLoadLimit: 0.82, policyMode: "hybrid"
+        capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.5, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 28, hotspotStops: [3, 8, 12], hotspotMultiplier: 2.4,
+        forbiddenStops: [3, 8, 12], initialDelaySec: 0, distanceThresholdStops: 1.25,
+        timeThresholdMin: 3.2, delayThresholdMin: 1.2, followerLoadLimit: 0.82, policyMode: "hybrid"
       }
     };
 
@@ -853,13 +877,20 @@
       c.busCount = clamp(Math.round(c.busCount), 3, Math.min(10, c.stopCount - 2));
       c.durationSec = Math.round(c.durationMin * 60);
       c.baseTravelSec = Math.max(20, c.stopDistanceKm / Math.max(4, c.baseSpeedKmh) * 3600);
-      c.baseStopSec = 5;
+      c.doorTimeSec = Number.isFinite(c.doorTimeSec) ? c.doorTimeSec : 4;
+      c.stopManeuverLossSec = Number.isFinite(c.stopManeuverLossSec) ? c.stopManeuverLossSec : 14;
+      c.boardingSetupSec = Number.isFinite(c.boardingSetupSec) ? c.boardingSetupSec : 2;
+      c.alightingSetupSec = Number.isFinite(c.alightingSetupSec) ? c.alightingSetupSec : 1;
+      c.crowdedExtraSec = Number.isFinite(c.crowdedExtraSec) ? c.crowdedExtraSec : 5;
+      c.crowdingThreshold = Number.isFinite(c.crowdingThreshold) ? c.crowdingThreshold : 0.75;
+      c.baseStopSec = c.doorTimeSec;
       c.sampleIntervalSec = 15;
+      c.waitWindowSec = 300;
       c.arrivalQuantumSec = 5;
       c.controlEnabled = raw.controlEnabled !== false;
       c.seed = Number(raw.seed) || 1;
       c.hotspotStops = (c.hotspotStops || []).filter((n) => n >= 0 && n < c.stopCount);
-      c.forbiddenStops = (c.forbiddenStops || []).filter((n) => n >= 0 && n < c.stopCount);
+      c.forbiddenStops = [...c.hotspotStops];
       return c;
     }
 
@@ -877,17 +908,19 @@
         stopDistanceKm: Number($("distanceInput").value),
         boardTimeSec: Number($("boardTimeInput").value),
         alightTimeSec: Number($("alightTimeInput").value),
+        crowdedExtraSec: Number($("crowdedExtraInput").value),
+        stopManeuverLossSec: Number($("stopLossInput").value),
+        doorTimeSec: Number($("doorTimeInput").value),
+        boardingSetupSec: Number($("boardingSetupInput").value),
+        alightingSetupSec: Number($("alightingSetupInput").value),
+        crowdingThreshold: Number($("crowdingThresholdInput").value),
         randomDelaySec: Number($("randomDelayInput").value),
         hotspotStops: parseList($("hotspotInput").value, stopCount),
         hotspotMultiplier: Number($("hotspotMultiplierInput").value),
-        forbiddenStops: parseList($("forbiddenInput").value, stopCount),
         initialDelaySec: Number($("initialDelayInput").value),
         distanceThresholdStops: Number($("distanceThresholdInput").value),
         timeThresholdMin: Number($("timeThresholdInput").value),
         delayThresholdMin: Number($("delayThresholdInput").value),
-        maxConsecutiveSkips: Number($("maxConsecutiveInput").value),
-        maxSkipsPerTrip: Number($("maxSkipInput").value),
-        cooldownMin: Number($("cooldownInput").value),
         followerLoadLimit: Number($("followerLoadInput").value),
         policyMode: $("policySelect").value
       });
@@ -904,17 +937,19 @@
       $("distanceInput").value = c.stopDistanceKm;
       $("boardTimeInput").value = c.boardTimeSec;
       $("alightTimeInput").value = c.alightTimeSec;
+      $("crowdedExtraInput").value = c.crowdedExtraSec;
+      $("stopLossInput").value = c.stopManeuverLossSec;
+      $("doorTimeInput").value = c.doorTimeSec;
+      $("boardingSetupInput").value = c.boardingSetupSec;
+      $("alightingSetupInput").value = c.alightingSetupSec;
+      $("crowdingThresholdInput").value = c.crowdingThreshold;
       $("randomDelayInput").value = c.randomDelaySec;
       $("hotspotInput").value = c.hotspotStops.join(",");
       $("hotspotMultiplierInput").value = c.hotspotMultiplier;
-      $("forbiddenInput").value = c.forbiddenStops.join(",");
       $("initialDelayInput").value = c.initialDelaySec;
       $("distanceThresholdInput").value = c.distanceThresholdStops;
       $("timeThresholdInput").value = c.timeThresholdMin;
       $("delayThresholdInput").value = c.delayThresholdMin;
-      $("maxConsecutiveInput").value = c.maxConsecutiveSkips;
-      $("maxSkipInput").value = c.maxSkipsPerTrip;
-      $("cooldownInput").value = c.cooldownMin;
       $("followerLoadInput").value = c.followerLoadLimit;
       $("policySelect").value = c.policyMode;
     }
@@ -934,15 +969,32 @@
             const count = rng.poisson(rate * config.arrivalQuantumSec / 60);
             for (let i = 0; i < count; i++) {
               const offset = rng.range(0, config.arrivalQuantumSec);
-              const maxTrip = Math.max(2, config.stopCount - 1);
-              const trip = Math.min(maxTrip, Math.max(1, Math.floor(1 + rng.next() ** 0.75 * (config.stopCount - 2))));
-              const dest = (stop + trip) % config.stopCount;
+              const dest = EventGenerator.chooseDestination(config, rng, stop);
               events.push({ id: id++, time: t + offset, origin: stop, dest });
             }
           }
         }
         events.sort((a, b) => a.time - b.time);
         return events;
+      }
+
+      static chooseDestination(config, rng, origin) {
+        const candidates = [];
+        for (let step = 1; step < config.stopCount; step++) {
+          const stop = (origin + step) % config.stopCount;
+          const isImportant = config.hotspotStops.includes(stop);
+          const nearTripBias = 1 / Math.sqrt(step);
+          const importantWeight = isImportant ? Math.max(2.5, config.hotspotMultiplier * 1.8) : 1;
+          const downstreamHubBonus = isImportant && step <= config.stopCount * 0.75 ? 1.4 : 1;
+          candidates.push({ stop, weight: nearTripBias * importantWeight * downstreamHubBonus });
+        }
+        const total = sum(candidates.map((c) => c.weight));
+        let pick = rng.range(0, total);
+        for (const c of candidates) {
+          pick -= c.weight;
+          if (pick <= 0) return c.stop;
+        }
+        return candidates[candidates.length - 1].stop;
       }
 
       static travelNoise(config, busId, segmentIndex) {
@@ -963,18 +1015,39 @@
         this.eventIndex = 0;
         this.time = 0;
         this.waiting = Array.from({ length: config.stopCount }, () => []);
+        this.stops = this.createStops();
         this.completed = [];
         this.allPassengers = new Map();
         this.history = [];
         this.skipLog = [];
         this.fullPassLog = [];
+        this.blockLog = [];
         this.bunchActive = false;
         this.bunchStarts = 0;
         this.bunchDuration = 0;
+        this.blockedDuringBunchSec = 0;
         this.closePairEvents = 0;
         this.totalDwell = 0;
+        this.totalBlockedDelaySec = 0;
+        this.blockEvents = 0;
+        this.maxBlockedSec = 0;
+        this.lastSampleTime = null;
         this.lastSnapshot = null;
         this.buses = this.createBuses();
+      }
+
+      createStops() {
+        return Array.from({ length: this.config.stopCount }, (_, id) => ({
+          id,
+          occupiedByBusId: null,
+          serviceEndTime: 0,
+          blockedQueue: [],
+          totalBlockedDelaySec: 0,
+          blockEvents: 0,
+          maxBlockedSec: 0,
+          maxQueue: 0,
+          totalOccupiedSec: 0
+        }));
       }
 
       createBuses() {
@@ -988,22 +1061,28 @@
             pos,
             fromStop: stop,
             targetStop: (stop + 1) % this.config.stopCount,
-            status: i === 0 ? "dwelling" : "moving",
-            dwellRemaining: i === 0 ? this.config.initialDelaySec : 0,
+            status: i === 0 && this.config.initialDelaySec > 0 ? "dwelling" : "moving",
+            dwellRemaining: i === 0 && this.config.initialDelaySec > 0 ? this.config.initialDelaySec : 0,
             segmentRemaining: Math.max(1, this.config.baseTravelSec * (1 - (pos - Math.floor(pos)))),
             segmentDuration: this.config.baseTravelSec,
             segmentIndex: 0,
             onboard: [],
-            skippedInRow: 0,
-            skipsThisTrip: 0,
-            lastSkipTime: -999999,
             delaySec: i === 0 ? this.config.initialDelaySec : 0,
+            totalBlockedDelaySec: 0,
+            blockEvents: 0,
+            blockedStopId: null,
+            blockedStartTime: null,
+            blockedCurrentSec: 0,
+            serviceStopId: i === 0 ? stop : null,
             totalDwell: 0,
             totalSkipped: 0,
             lastAction: "通常",
             justSkippedStop: null
           });
-          if (i !== 0) {
+          if (i === 0 && this.config.initialDelaySec > 0) {
+            this.occupyStop(stop, i + 1, this.config.initialDelaySec);
+          }
+          if (i !== 0 || this.config.initialDelaySec <= 0) {
             const bus = buses[buses.length - 1];
             this.startSegment(bus, Math.floor(pos), false);
             bus.segmentRemaining = bus.segmentDuration * (1 - (pos - Math.floor(pos)));
@@ -1021,6 +1100,10 @@
         bus.segmentDuration = duration;
         bus.segmentRemaining = duration;
         bus.status = "moving";
+        bus.blockedStopId = null;
+        bus.blockedStartTime = null;
+        bus.blockedCurrentSec = 0;
+        bus.serviceStopId = null;
         bus.lastAction = "走行";
       }
 
@@ -1055,8 +1138,11 @@
             bus.dwellRemaining -= actualDt;
             bus.delaySec += actualDt;
             if (bus.dwellRemaining <= 0) {
+              this.releaseStop(bus.serviceStopId, bus.id);
               this.startSegment(bus, bus.fromStop, true);
             }
+          } else if (bus.status === "blocked") {
+            this.updateBlockedBus(bus, actualDt);
           } else {
             bus.segmentRemaining -= actualDt;
             const progress = clamp(1 - bus.segmentRemaining / bus.segmentDuration, 0, 1);
@@ -1071,12 +1157,42 @@
             }
           }
         }
+        this.enforceNoOvertaking();
         this.time = nextTime;
-        if (Math.floor(this.time) % this.config.sampleIntervalSec < dt) this.sample();
+        const lastSample = this.lastSampleTime ?? 0;
+        if (this.time - lastSample >= this.config.sampleIntervalSec || this.time >= this.config.durationSec) {
+          this.sample();
+        }
+      }
+
+      enforceNoOvertaking() {
+        const epsilon = 0.012;
+        const ordered = [...this.buses].sort((a, b) => a.id - b.id);
+        for (let i = 1; i < ordered.length; i++) {
+          const leader = ordered[i - 1];
+          const follower = ordered[i];
+          const gap = circularForward(follower.pos, leader.pos, this.config.stopCount);
+          if (gap < epsilon) {
+            follower.pos = (leader.pos - epsilon + this.config.stopCount) % this.config.stopCount;
+            if (follower.status === "moving") {
+              follower.segmentRemaining = Math.max(follower.segmentRemaining, 0.5);
+            }
+          }
+        }
       }
 
       handleArrival(bus, stop) {
-        if (stop === 0) bus.skipsThisTrip = 0;
+        const berth = this.stops[stop];
+        if (berth.occupiedByBusId !== null && berth.occupiedByBusId !== bus.id) {
+          this.enterBlocked(bus, stop);
+          return;
+        }
+        this.beginService(bus, stop);
+      }
+
+      beginService(bus, stop) {
+        this.removeFromBlockedQueue(bus, stop);
+        this.finishBlockedIfNeeded(bus, stop);
         const alighting = [];
         const staying = [];
         for (const p of bus.onboard) {
@@ -1099,10 +1215,7 @@
             if (p.firstSkipTime == null) p.firstSkipTime = this.time;
             p.skippedAt.push({ time: this.time, stop, busId: bus.id });
           }
-          bus.skippedInRow++;
-          bus.skipsThisTrip++;
           bus.totalSkipped += skippedNow;
-          bus.lastSkipTime = this.time;
           bus.lastAction = skippedNow ? `降車のみ ${skippedNow}人後続へ` : "通過";
           bus.justSkippedStop = stop;
           this.skipLog.push({ time: this.time, stop, busId: bus.id, passengers: skippedNow, reason: decision.reason });
@@ -1124,22 +1237,105 @@
             }
             this.fullPassLog.push({ time: this.time, stop, busId: bus.id, passengers: deniedByFull });
           }
-          bus.skippedInRow = 0;
           bus.lastAction = boarded || alighting.length ? `乗${boarded} 降${alighting.length}` : "停車短";
         }
 
-        const dwell = decision.skip && alighting.length === 0
-          ? 0
-          : this.config.baseStopSec + boarded * this.config.boardTimeSec + alighting.length * this.config.alightTimeSec;
+        const dwell = this.calculateDwellTime(bus, boarded, alighting.length, decision.skip);
         bus.totalDwell += dwell;
         this.totalDwell += dwell;
         bus.fromStop = stop;
         if (dwell > 0) {
+          this.occupyStop(stop, bus.id, dwell);
           bus.status = "dwelling";
           bus.dwellRemaining = dwell;
+          bus.serviceStopId = stop;
         } else {
           this.startSegment(bus, stop, true);
         }
+      }
+
+      calculateDwellTime(bus, boarded, alighted, skip) {
+        if (boarded === 0 && alighted === 0) return 0;
+        if (skip && alighted === 0) return 0;
+        const loadRatio = bus.onboard.length / Math.max(1, this.config.capacity);
+        const crowdedExtra = loadRatio >= this.config.crowdingThreshold ? this.config.crowdedExtraSec : 0;
+        const boardingProcess = boarded > 0
+          ? this.config.boardingSetupSec + crowdedExtra + boarded * this.config.boardTimeSec
+          : 0;
+        const alightingProcess = alighted > 0
+          ? this.config.alightingSetupSec + crowdedExtra + alighted * this.config.alightTimeSec
+          : 0;
+        const passengerProcess = boardingProcess + alightingProcess;
+        return this.config.stopManeuverLossSec + this.config.doorTimeSec + passengerProcess;
+      }
+
+      occupyStop(stopId, busId, dwellSec) {
+        const stop = this.stops[stopId];
+        stop.occupiedByBusId = busId;
+        stop.serviceEndTime = this.time + dwellSec;
+        stop.totalOccupiedSec += dwellSec;
+      }
+
+      releaseStop(stopId, busId) {
+        if (stopId == null) return;
+        const stop = this.stops[stopId];
+        if (stop && stop.occupiedByBusId === busId) {
+          stop.occupiedByBusId = null;
+          stop.serviceEndTime = this.time;
+        }
+      }
+
+      enterBlocked(bus, stopId) {
+        const stop = this.stops[stopId];
+        if (!stop.blockedQueue.includes(bus.id)) {
+          stop.blockedQueue.push(bus.id);
+          stop.maxQueue = Math.max(stop.maxQueue, stop.blockedQueue.length);
+        }
+        bus.status = "blocked";
+        bus.blockedStopId = stopId;
+        bus.blockedStartTime = this.time;
+        bus.blockedCurrentSec = 0;
+        bus.segmentRemaining = 0;
+        bus.pos = (stopId - 0.08 + this.config.stopCount) % this.config.stopCount;
+        bus.lastAction = "前車待ち";
+      }
+
+      updateBlockedBus(bus, dt) {
+        const stop = this.stops[bus.blockedStopId];
+        if (!stop) return;
+        if (stop.occupiedByBusId === null && stop.blockedQueue[0] === bus.id) {
+          this.beginService(bus, bus.blockedStopId);
+          return;
+        }
+        bus.blockedCurrentSec += dt;
+        bus.totalBlockedDelaySec += dt;
+        bus.delaySec += dt;
+        this.totalBlockedDelaySec += dt;
+        stop.totalBlockedDelaySec += dt;
+      }
+
+      removeFromBlockedQueue(bus, stopId) {
+        const stop = this.stops[stopId];
+        if (!stop) return;
+        const index = stop.blockedQueue.indexOf(bus.id);
+        if (index >= 0) stop.blockedQueue.splice(index, 1);
+      }
+
+      finishBlockedIfNeeded(bus, stopId) {
+        if (bus.blockedStartTime == null) return;
+        const duration = Math.max(0, this.time - bus.blockedStartTime);
+        const stop = this.stops[stopId];
+        bus.blockEvents++;
+        this.blockEvents++;
+        this.maxBlockedSec = Math.max(this.maxBlockedSec, duration);
+        if (stop) {
+          stop.blockEvents++;
+          stop.maxBlockedSec = Math.max(stop.maxBlockedSec, duration);
+        }
+        this.blockLog.push({ time: this.time, stop: stopId, busId: bus.id, duration });
+        bus.blockedStartTime = null;
+        bus.blockedCurrentSec = 0;
+        bus.blockedStopId = null;
       }
 
       controlDecision(bus, stop) {
@@ -1147,9 +1343,6 @@
         if (this.waiting[stop].length === 0 && !bus.onboard.some((p) => p.dest === stop)) return { skip: false, reason: "no demand" };
         if (this.config.forbiddenStops.includes(stop)) return { skip: false, reason: "forbidden stop" };
         if (bus.delaySec < this.config.delayThresholdMin * 60) return { skip: false, reason: "delay small" };
-        if (bus.skippedInRow >= this.config.maxConsecutiveSkips) return { skip: false, reason: "consecutive limit" };
-        if (bus.skipsThisTrip >= this.config.maxSkipsPerTrip) return { skip: false, reason: "trip limit" };
-        if (this.time - bus.lastSkipTime < this.config.cooldownMin * 60) return { skip: false, reason: "cooldown" };
         const follower = this.findFollower(bus);
         if (!follower) return { skip: false, reason: "no follower" };
         const followerLoad = follower.onboard.length / this.config.capacity;
@@ -1195,30 +1388,45 @@
       }
 
       sample() {
+        if (this.lastSampleTime === this.time && this.history.length) return;
         const metrics = this.computeMetrics();
+        const deltaSec = this.lastSampleTime == null ? 0 : Math.max(0, this.time - this.lastSampleTime);
         const isBunched = metrics.minHeadwayStops < metrics.idealHeadwayStops * 0.3 || metrics.closePairs > 0;
         if (isBunched) {
-          this.bunchDuration += this.config.sampleIntervalSec;
+          this.bunchDuration += deltaSec;
+          this.blockedDuringBunchSec += metrics.activeBlockedBuses * deltaSec;
           if (!this.bunchActive) this.bunchStarts++;
         }
         this.bunchActive = isBunched;
         this.closePairEvents += metrics.closePairs;
+        metrics.bunchStarts = this.bunchStarts;
+        metrics.bunchDurationMin = this.bunchDuration / 60;
+        metrics.blockedDuringBunchMin = this.blockedDuringBunchSec / 60;
         this.lastSnapshot = metrics;
         this.history.push({
           t: this.time,
           bunchScore: metrics.bunchScore,
           avgWaitMin: metrics.avgWaitMin,
           p95WaitMin: metrics.p95WaitMin,
+          recentAvgWaitMin: metrics.recentAvgWaitMin,
+          recentP95WaitMin: metrics.recentP95WaitMin,
           minHeadwayStops: metrics.minHeadwayStops,
           skipAvgExtraMin: metrics.skipAvgExtraMin,
           skipMaxExtraMin: metrics.skipMaxExtraMin,
+          totalBlockedDelayMin: metrics.totalBlockedDelayMin,
+          activeBlockedBuses: metrics.activeBlockedBuses,
+          blockedDuringBunchMin: metrics.blockedDuringBunchMin,
           onboardByBus: this.buses.map((b) => b.onboard.length)
         });
-        if (this.history.length > 360) this.history.shift();
+        this.lastSampleTime = this.time;
       }
 
       computeMetrics() {
         const waits = this.completed.filter((p) => p.boardTime != null).map((p) => (p.boardTime - p.arrivalTime) / 60);
+        const recentStart = Math.max(0, this.time - this.config.waitWindowSec);
+        const recentWaits = this.completed
+          .filter((p) => p.boardTime != null && p.boardTime > recentStart && p.boardTime <= this.time)
+          .map((p) => (p.boardTime - p.arrivalTime) / 60);
         const rides = this.completed.map((p) => (p.alightTime - p.boardTime) / 60).filter(Number.isFinite);
         const totals = this.completed.map((p) => (p.alightTime - p.arrivalTime) / 60).filter(Number.isFinite);
         const skipped = [...this.allPassengers.values()].filter((p) => p.skipCount > 0);
@@ -1230,16 +1438,30 @@
         const maxHw = Math.max(...headways);
         const cv = mean(headways) ? std(headways) / mean(headways) : 0;
         const closePairs = headways.filter((h) => h <= 1).length;
-        const bunchScore = clamp(cv * 42 + Math.max(0, (ideal * 0.55 - minHw) / ideal) * 78 + closePairs * 8, 0, 100);
+        const minRatio = minHw / Math.max(0.01, ideal);
+        const closeSeverity = mean(headways.map((h) => clamp((ideal * 0.55 - h) / (ideal * 0.55), 0, 1)));
+        const cvScore = clamp(cv / 1.35, 0, 1) * 45;
+        const minScore = clamp((0.65 - minRatio) / 0.65, 0, 1) * 35;
+        const closeScore = closeSeverity * 20;
+        const bunchScore = clamp(cvScore + minScore + closeScore, 0, 100);
         const loadByBus = this.buses.map((b) => b.onboard.length);
         const delayByBus = this.buses.map((b) => b.delaySec / 60);
         const uniqueDenied = [...this.allPassengers.values()].filter((p) => p.deniedFullCount > 0).length;
         const deniedAfterSkip = [...this.allPassengers.values()].filter((p) => p.deniedAfterSkip > 0).length;
+        const stopBlockedDelayMins = this.stops.map((s) => s.totalBlockedDelaySec / 60);
+        const stopOccupiedMins = this.stops.map((s) => s.totalOccupiedSec / 60);
+        const stopOccupancyRates = this.stops.map((s) => this.time > 0 ? s.totalOccupiedSec / this.time : 0);
+        const stopBlockEvents = this.stops.map((s) => s.blockEvents);
+        const stopMaxQueues = this.stops.map((s) => s.maxQueue);
+        const activeBlockedBuses = this.buses.filter((b) => b.status === "blocked").length;
         return {
           timeMin: this.time / 60,
           completed: this.completed.length,
           waitingNow: sum(this.waiting.map((q) => q.length)),
           avgWaitMin: mean(waits),
+          recentAvgWaitMin: recentWaits.length ? mean(recentWaits) : NaN,
+          recentP95WaitMin: recentWaits.length ? pct(recentWaits, 95) : NaN,
+          recentBoardedPassengers: recentWaits.length,
           medianWaitMin: pct(waits, 50),
           p95WaitMin: pct(waits, 95),
           maxWaitMin: waits.length ? Math.max(...waits) : 0,
@@ -1268,17 +1490,31 @@
           maxDelayMin: delayByBus.length ? Math.max(...delayByBus) : 0,
           loadStd: std(loadByBus),
           totalDwellMin: this.totalDwell / 60,
-          totalSkips: sum(this.buses.map((b) => b.totalSkipped))
+          totalSkips: sum(this.buses.map((b) => b.totalSkipped)),
+          totalBlockedDelayMin: this.totalBlockedDelaySec / 60,
+          avgBlockedDelayPerBusMin: this.totalBlockedDelaySec / 60 / Math.max(1, this.config.busCount),
+          blockEvents: this.blockEvents,
+          avgBlockDurationMin: this.blockEvents ? (this.totalBlockedDelaySec / this.blockEvents / 60) : 0,
+          maxBlockedDelayMin: this.maxBlockedSec / 60,
+          activeBlockedBuses,
+          stopBlockedDelayMins,
+          stopBlockEvents,
+          stopMaxQueues,
+          stopOccupiedMins,
+          stopOccupancyRates,
+          totalStopOccupiedMin: sum(stopOccupiedMins),
+          avgStopOccupancyRate: mean(stopOccupancyRates),
+          blockedDuringBunchMin: this.blockedDuringBunchSec / 60
         };
       }
 
       runToEnd(maxSteps = 20000) {
         let steps = 0;
         while (this.time < this.config.durationSec && steps < maxSteps) {
-          this.step(5);
+          this.step(1);
           steps++;
         }
-        this.sample();
+        if (this.lastSampleTime !== this.time) this.sample();
         return this.computeMetrics();
       }
     }
@@ -1387,12 +1623,14 @@
         const waitImprove = p.avgWaitMin > 0 ? (p.avgWaitMin - c.avgWaitMin) / p.avgWaitMin * 100 : 0;
         const bunchImprove = p.bunchScore > 0 ? (p.bunchScore - c.bunchScore) / p.bunchScore * 100 : 0;
         const delayImprove = p.avgDelayMin > 0 ? (p.avgDelayMin - c.avgDelayMin) / p.avgDelayMin * 100 : 0;
+        const blockedImprove = p.totalBlockedDelayMin > 0 ? (p.totalBlockedDelayMin - c.totalBlockedDelayMin) / p.totalBlockedDelayMin * 100 : 0;
         const cautious = c.skipMaxExtraMin > 6 || c.multiSkippedPassengers > 0 || c.deniedAfterSkip > 0;
-        const score = clamp(50 + waitImprove * 0.7 + bunchImprove * 0.5 + delayImprove * 0.35 - c.skipAvgExtraMin * 5 - c.deniedAfterSkip * 0.7, 0, 100);
+        const score = clamp(50 + waitImprove * 0.7 + bunchImprove * 0.5 + delayImprove * 0.35 + blockedImprove * 0.25 - c.skipAvgExtraMin * 5 - c.deniedAfterSkip * 0.7, 0, 100);
         $("summary").innerHTML = [
           this.metric("待ち時間改善", `${fmt(waitImprove, 0)}%`, `平均 ${fmt(p.avgWaitMin)} → ${fmt(c.avgWaitMin)} 分`, waitImprove > 5 ? "good" : waitImprove < -3 ? "bad" : "warn"),
           this.metric("団子削減", `${fmt(bunchImprove, 0)}%`, `団子度 ${fmt(p.bunchScore,0)} → ${fmt(c.bunchScore,0)}`, bunchImprove > 8 ? "good" : bunchImprove < -5 ? "bad" : "warn"),
           this.metric("遅延削減", `${fmt(delayImprove, 0)}%`, `平均遅延 ${fmt(p.avgDelayMin)} → ${fmt(c.avgDelayMin)} 分`, delayImprove > 5 ? "good" : delayImprove < -3 ? "bad" : "warn"),
+          this.metric("前車待ち削減", `${fmt(blockedImprove, 0)}%`, `総 ${fmt(p.totalBlockedDelayMin)} → ${fmt(c.totalBlockedDelayMin)} 分`, blockedImprove > 8 ? "good" : blockedImprove < -5 ? "bad" : "warn"),
           this.metric("不利益人数", `${c.skippedPassengers}`, `最大追加待ち ${fmt(c.skipMaxExtraMin)} 分`, c.skipMaxExtraMin > 6 ? "bad" : c.skippedPassengers > 0 ? "warn" : "good"),
           this.metric("おすすめ度", `${fmt(score, 0)}`, cautious ? "慎重運用フラグあり" : "副作用は限定的", score >= 65 && !cautious ? "good" : score < 45 ? "bad" : "warn")
         ].join("");
@@ -1405,8 +1643,10 @@
       miniHtml(m) {
         return [
           ["平均待ち", `${fmt(m.avgWaitMin)}分`],
+          ["直近待ち", `${fmt(m.recentAvgWaitMin)}分`],
           ["95%待ち", `${fmt(m.p95WaitMin)}分`],
           ["最小車間", `${fmt(m.minHeadwayStops)}停`],
+          ["前車待ち", `${fmt(m.totalBlockedDelayMin)}分`],
           ["スキップ", `${m.skipEvents}回`]
         ].map(([k, v]) => `<div class="mini"><b>${v}</b><span>${k}</span></div>`).join("");
       }
@@ -1419,24 +1659,38 @@
         const right = 716;
         const y = 170;
         svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-        const stopX = (i) => left + (right - left) * i / Math.max(1, c.stopCount - 1);
+        const span = right - left;
+        const stopX = (i) => left + span * i / Math.max(1, c.stopCount - 1);
         const posX = (pos) => {
           const wrapped = ((pos % c.stopCount) + c.stopCount) % c.stopCount;
-          const scaled = wrapped / c.stopCount * (c.stopCount - 1);
-          return stopX(scaled);
+          const lower = Math.floor(wrapped);
+          const frac = wrapped - lower;
+          if (lower >= c.stopCount - 1) return right;
+          return stopX(lower) + (stopX(lower + 1) - stopX(lower)) * frac;
         };
         const forbidden = new Set(c.forbiddenStops);
         const hot = new Set(c.hotspotStops);
         const waits = sim.waiting.map((q) => q.length);
         const maxWait = Math.max(1, ...waits);
         const recentSkips = sim.skipLog.filter((e) => sim.time - e.time < 45);
+        const recentBlocks = sim.blockLog.filter((e) => sim.time - e.time < 45);
         let html = `<rect x="0" y="0" width="${w}" height="${h}" fill="transparent"/>`;
         html += `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="#8f9aa7" stroke-width="4" stroke-linecap="round"/>`;
         for (let i = 0; i < c.stopCount; i++) {
           const x = stopX(i);
           const r = 7 + waits[i] / maxWait * 17;
           const skip = recentSkips.find((e) => e.stop === i);
-          html += `<circle cx="${x}" cy="${y}" r="${r}" fill="${hot.has(i) ? "#f4b24d" : "#ffffff"}" stroke="${forbidden.has(i) ? "#222" : "#657080"}" stroke-width="${forbidden.has(i) ? 3 : 1.5}"/>`;
+          const stopState = sim.stops[i];
+          const activeBlock = stopState.blockedQueue.length > 0;
+          const recentBlock = recentBlocks.find((e) => e.stop === i);
+          const strokeColor = activeBlock ? "#c83f3f" : forbidden.has(i) ? "#222" : "#657080";
+          html += `<circle cx="${x}" cy="${y}" r="${r}" fill="${hot.has(i) ? "#f4b24d" : "#ffffff"}" stroke="${strokeColor}" stroke-width="${activeBlock ? 3.5 : forbidden.has(i) ? 3 : 1.5}"/>`;
+          if (stopState.occupiedByBusId !== null) {
+            html += `<rect x="${x-13}" y="${y+11}" width="26" height="10" rx="3" fill="#26313d"/>`;
+          }
+          if (activeBlock || recentBlock) {
+            html += `<text x="${x}" y="${y+62}" text-anchor="middle" font-size="10" font-weight="800" fill="#c83f3f">前車待ち</text>`;
+          }
           html += `<text x="${x}" y="${y + 43}" text-anchor="middle" font-size="10" fill="#67707d">${i}</text>`;
           html += `<text x="${x}" y="${y - r - 8}" text-anchor="middle" font-size="11" font-weight="700" fill="${waits[i] > 14 ? "#c83f3f" : "#4d5966"}">${waits[i]}</text>`;
           if (skip) {
@@ -1451,13 +1705,14 @@
           html += `<text x="${w/2}" y="32" text-anchor="middle" font-size="18" font-weight="800" fill="#c83f3f">団子発生</text>`;
         }
         for (const bus of sim.buses) {
-          const x = posX(bus.pos);
+          const x = bus.status === "dwelling" && bus.serviceStopId != null ? stopX(bus.serviceStopId) : posX(bus.pos);
           const load = bus.onboard.length / c.capacity;
           const delayed = bus.delaySec > c.delayThresholdMin * 60;
           const follower = sim.findFollower(bus);
           const followerClose = follower && circularForward(follower.pos, bus.pos, c.stopCount) <= c.distanceThresholdStops;
           const skipping = bus.justSkippedStop != null || bus.lastAction.startsWith("降車のみ");
-          const color = skipping && isControl ? "#7357c8" : load > 0.85 ? "#c83f3f" : delayed ? "#b47b13" : followerClose ? "#16848b" : (isControl ? "#25865f" : "#2c6fbb");
+          const blocked = bus.status === "blocked";
+          const color = blocked ? "#c83f3f" : skipping && isControl ? "#7357c8" : load > 0.85 ? "#c83f3f" : delayed ? "#b47b13" : followerClose ? "#16848b" : "#2c6fbb";
           const yy = y - 55 - ((bus.id % 2) * 30);
           html += `<g>`;
           html += `<line x1="${x}" y1="${y-8}" x2="${x}" y2="${yy+18}" stroke="${color}" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.7"/>`;
@@ -1467,6 +1722,7 @@
           html += `<rect x="${x-22}" y="${yy+23}" width="44" height="5" rx="2" fill="#e5e8ec"/>`;
           html += `<rect x="${x-22}" y="${yy+23}" width="${44 * clamp(load,0,1)}" height="5" rx="2" fill="${load > 0.85 ? "#c83f3f" : "#25865f"}"/>`;
           html += `<text x="${x}" y="${yy+43}" text-anchor="middle" font-size="10" fill="#4d5966">${bus.onboard.length}人 ${fmt(bus.delaySec/60,1)}分</text>`;
+          if (blocked) html += `<text x="${x}" y="${yy-20}" text-anchor="middle" font-size="10" font-weight="800" fill="#c83f3f">前車待ち ${fmt(bus.blockedCurrentSec/60,1)}分</text>`;
           if (skipping && isControl) html += `<text x="${x}" y="${yy-20}" text-anchor="middle" font-size="10" fill="#7357c8">降車のみ</text>`;
           html += `</g>`;
         }
@@ -1486,6 +1742,12 @@
           { name: "なし95%", color: "#a12d2d", data: this.plain.history.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
           { name: "あり95%", color: "#166f4b", data: this.control.history.map((h) => [h.t/60, h.p95WaitMin]), dash: true }
         ]);
+        this.drawLineChart($("recentWaitChart"), [
+          { name: "なし直近平均", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.recentAvgWaitMin]) },
+          { name: "あり直近平均", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.recentAvgWaitMin]) },
+          { name: "なし直近95%", color: "#a12d2d", data: this.plain.history.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
+          { name: "あり直近95%", color: "#166f4b", data: this.control.history.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true }
+        ]);
         this.drawLineChart($("headwayChart"), [
           { name: "制御なし", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.minHeadwayStops]) },
           { name: "制御あり", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.minHeadwayStops]) }
@@ -1494,6 +1756,27 @@
           { name: "平均追加", color: "#7357c8", data: this.control.history.map((h) => [h.t/60, h.skipAvgExtraMin]) },
           { name: "最大追加", color: "#b47b13", data: this.control.history.map((h) => [h.t/60, h.skipMaxExtraMin]) }
         ]);
+        this.drawLineChart($("blockedChart"), [
+          { name: "制御なし", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.totalBlockedDelayMin || 0]) },
+          { name: "制御あり", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.totalBlockedDelayMin || 0]) }
+        ]);
+        this.drawLineChart($("bunchBlockedChart"), [
+          { name: "制御なし", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.blockedDuringBunchMin || 0]) },
+          { name: "制御あり", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.blockedDuringBunchMin || 0]) }
+        ]);
+        this.drawBarChart($("stopBlockChart"), this.stopRankingRows("blocked"));
+        this.drawBarChart($("occupancyChart"), this.stopRankingRows("occupancy"), 100);
+      }
+
+      stopRankingRows(type) {
+        const p = this.plain.computeMetrics();
+        const c = this.control.computeMetrics();
+        const values = Array.from({ length: this.config.stopCount }, (_, stop) => {
+          const plain = type === "occupancy" ? p.stopOccupancyRates[stop] * 100 : p.stopBlockedDelayMins[stop];
+          const control = type === "occupancy" ? c.stopOccupancyRates[stop] * 100 : c.stopBlockedDelayMins[stop];
+          return { label: `停${stop}`, plain, control, total: plain + control };
+        });
+        return values.sort((a, b) => b.total - a.total).slice(0, 8);
       }
 
       drawLineChart(canvas, series, fixedMax = null) {
@@ -1504,7 +1787,7 @@
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, w, h);
         const pad = { l: 34, r: 12, t: 10, b: 24 };
-        const all = series.flatMap((s) => s.data);
+        const all = series.flatMap((s) => s.data).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
         const maxX = Math.max(1, this.config.durationMin, ...all.map((p) => p[0]));
         const maxY = fixedMax ?? Math.max(1, ...all.map((p) => p[1])) * 1.12;
         ctx.strokeStyle = "#e2ddd3";
@@ -1529,10 +1812,18 @@
           ctx.lineWidth = 2.3;
           if (s.dash) ctx.setLineDash([6, 4]);
           ctx.beginPath();
+          let drawing = false;
           s.data.forEach((p, i) => {
+            if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) {
+              drawing = false;
+              return;
+            }
             const x = xMap(p[0]);
             const y = yMap(clamp(p[1], 0, maxY));
-            if (i === 0) ctx.moveTo(x, y);
+            if (!drawing) {
+              ctx.moveTo(x, y);
+              drawing = true;
+            }
             else ctx.lineTo(x, y);
           });
           ctx.stroke();
@@ -1540,15 +1831,48 @@
         }
       }
 
+      drawBarChart(canvas, rows, fixedMax = null) {
+        const ctx = canvas.getContext("2d");
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        const pad = { l: 42, r: 16, t: 12, b: 18 };
+        const maxValue = fixedMax ?? Math.max(1, ...rows.flatMap((r) => [r.plain, r.control])) * 1.12;
+        const groupH = (h - pad.t - pad.b) / Math.max(1, rows.length);
+        ctx.font = "11px Segoe UI";
+        rows.forEach((row, i) => {
+          const y = pad.t + i * groupH + 3;
+          const barH = Math.max(4, groupH * 0.32);
+          const maxW = w - pad.l - pad.r;
+          ctx.fillStyle = "#67707d";
+          ctx.fillText(row.label, 6, y + barH + 3);
+          ctx.fillStyle = "#c83f3f";
+          ctx.fillRect(pad.l, y, maxW * clamp(row.plain / maxValue, 0, 1), barH);
+          ctx.fillStyle = "#25865f";
+          ctx.fillRect(pad.l, y + barH + 3, maxW * clamp(row.control / maxValue, 0, 1), barH);
+          ctx.fillStyle = "#4d5966";
+          ctx.fillText(`${fmt(row.plain, 1)} / ${fmt(row.control, 1)}`, pad.l + 4, y + barH - 2);
+        });
+      }
+
       renderComments(p, c) {
         const waitImprove = p.avgWaitMin > 0 ? (p.avgWaitMin - c.avgWaitMin) / p.avgWaitMin * 100 : 0;
         const bunchImprove = p.bunchScore > 0 ? (p.bunchScore - c.bunchScore) / p.bunchScore * 100 : 0;
+        const blockedImprove = p.totalBlockedDelayMin > 0 ? (p.totalBlockedDelayMin - c.totalBlockedDelayMin) / p.totalBlockedDelayMin * 100 : 0;
         const lines = [];
         if (waitImprove > 5) lines.push(["good", `この条件では制御ありが平均待ち時間を約${fmt(waitImprove,0)}%改善しています。`]);
         else if (waitImprove < -3) lines.push(["bad", `この条件では制御ありの平均待ち時間が約${fmt(Math.abs(waitImprove),0)}%悪化しています。低頻度または後続混雑が影響している可能性があります。`]);
         else lines.push(["warn", "平均待ち時間の差は小さく、制御効果は限定的です。"]);
         if (bunchImprove > 8) lines.push(["good", `団子度は${fmt(p.bunchScore,0)}から${fmt(c.bunchScore,0)}へ低下し、車間回復の効果が見えます。`]);
         else lines.push(["warn", `団子度の改善は小さめです。しきい値を緩めると効果は強まりますが、副作用も増えます。`]);
+        if (p.totalBlockedDelayMin > 0) {
+          const cls = blockedImprove > 8 ? "good" : blockedImprove < -5 ? "bad" : "warn";
+          lines.push([cls, `前車待ち遅延は${fmt(p.totalBlockedDelayMin)}分から${fmt(c.totalBlockedDelayMin)}分です。回数は${p.blockEvents}回から${c.blockEvents}回、最大待機は${fmt(p.maxBlockedDelayMin)}分から${fmt(c.maxBlockedDelayMin)}分です。`]);
+        } else {
+          lines.push(["warn", "この条件では前車待ち遅延はまだほとんど発生していません。需要や乗降時間を上げると、バース1固定の影響が見えやすくなります。"]);
+        }
         if (c.skippedPassengers > 0) {
           const cls = c.skipMaxExtraMin > 6 || c.multiSkippedPassengers > 0 || c.deniedAfterSkip > 0 ? "bad" : "warn";
           lines.push([cls, `スキップされた乗客は${c.skippedPassengers}人、平均追加待ちは${fmt(c.skipAvgExtraMin)}分、最大は${fmt(c.skipMaxExtraMin)}分です。複数回スキップは${c.multiSkippedPassengers}人、後続満員の影響は${c.deniedAfterSkip}人です。`]);
@@ -1561,6 +1885,9 @@
       renderDetails(p, c) {
         const rows = [
           ["平均待ち時間 分", p.avgWaitMin, c.avgWaitMin],
+          ["直近5分 平均待ち 分", p.recentAvgWaitMin, c.recentAvgWaitMin],
+          ["直近5分 95%待ち 分", p.recentP95WaitMin, c.recentP95WaitMin],
+          ["直近5分 乗車人数", p.recentBoardedPassengers, c.recentBoardedPassengers],
           ["中央値待ち時間 分", p.medianWaitMin, c.medianWaitMin],
           ["95%待ち時間 分", p.p95WaitMin, c.p95WaitMin],
           ["最大待ち時間 分", p.maxWaitMin, c.maxWaitMin],
@@ -1574,6 +1901,14 @@
           ["団子継続時間 分", p.bunchDurationMin, c.bunchDurationMin],
           ["平均遅延 分", p.avgDelayMin, c.avgDelayMin],
           ["最大遅延 分", p.maxDelayMin, c.maxDelayMin],
+          ["総前車待ち遅延 分", p.totalBlockedDelayMin, c.totalBlockedDelayMin],
+          ["1台平均前車待ち 分", p.avgBlockedDelayPerBusMin, c.avgBlockedDelayPerBusMin],
+          ["前車待ち発生回数", p.blockEvents, c.blockEvents],
+          ["前車待ち平均 分/回", p.avgBlockDurationMin, c.avgBlockDurationMin],
+          ["最大前車待ち 分", p.maxBlockedDelayMin, c.maxBlockedDelayMin],
+          ["停留所総占有時間 分", p.totalStopOccupiedMin, c.totalStopOccupiedMin],
+          ["平均停留所占有率", p.avgStopOccupancyRate, c.avgStopOccupancyRate],
+          ["団子中の前車待ち 台分", p.blockedDuringBunchMin, c.blockedDuringBunchMin],
           ["混雑偏り SD", p.loadStd, c.loadStd],
           ["総停車時間 分", p.totalDwellMin, c.totalDwellMin],
           ["スキップ回数", p.skipEvents, c.skipEvents],
@@ -1584,8 +1919,21 @@
           ["満員通過回数", p.fullPassEvents, c.fullPassEvents],
           ["後続満員影響 人", p.deniedAfterSkip, c.deniedAfterSkip]
         ];
+        const stopRows = Array.from({ length: this.config.stopCount }, (_, stop) => ({
+          stop,
+          plainBlocked: p.stopBlockedDelayMins[stop],
+          controlBlocked: c.stopBlockedDelayMins[stop],
+          plainEvents: p.stopBlockEvents[stop],
+          controlEvents: c.stopBlockEvents[stop],
+          plainOcc: p.stopOccupancyRates[stop] * 100,
+          controlOcc: c.stopOccupancyRates[stop] * 100,
+          plainQueue: p.stopMaxQueues[stop],
+          controlQueue: c.stopMaxQueues[stop]
+        })).sort((a, b) => (b.plainBlocked + b.controlBlocked) - (a.plainBlocked + a.controlBlocked)).slice(0, 8);
         $("detailsTable").innerHTML = `<table><thead><tr><th>指標</th><th>制御なし</th><th>制御あり</th></tr></thead><tbody>${
           rows.map(([k, a, b]) => `<tr><td>${k}</td><td>${fmt(a, Number.isInteger(a) ? 0 : 2)}</td><td>${fmt(b, Number.isInteger(b) ? 0 : 2)}</td></tr>`).join("")
+        }</tbody></table><table style="margin-top:10px;"><thead><tr><th>停留所</th><th>前車待ち分</th><th>回数</th><th>占有率</th><th>最大列</th></tr></thead><tbody>${
+          stopRows.map((r) => `<tr><td>停${r.stop}</td><td>${fmt(r.plainBlocked)} / ${fmt(r.controlBlocked)}</td><td>${r.plainEvents} / ${r.controlEvents}</td><td>${fmt(r.plainOcc)}% / ${fmt(r.controlOcc)}%</td><td>${r.plainQueue} / ${r.controlQueue}</td></tr>`).join("")
         }</tbody></table>`;
       }
 
@@ -1597,7 +1945,9 @@
         const avgControlWait = mean(results.map((r) => r.control.avgWaitMin));
         const avgPlainBunch = mean(results.map((r) => r.plain.bunchScore));
         const avgControlBunch = mean(results.map((r) => r.control.bunchScore));
-        $("experimentOutput").innerHTML = `5シード平均: 待ち時間 ${fmt(avgPlainWait)}→${fmt(avgControlWait)}分、団子度 ${fmt(avgPlainBunch,0)}→${fmt(avgControlBunch,0)}。シード: ${seeds.join(", ")}`;
+        const avgPlainBlocked = mean(results.map((r) => r.plain.totalBlockedDelayMin));
+        const avgControlBlocked = mean(results.map((r) => r.control.totalBlockedDelayMin));
+        $("experimentOutput").innerHTML = `5シード平均: 待ち時間 ${fmt(avgPlainWait)}→${fmt(avgControlWait)}分、団子度 ${fmt(avgPlainBunch,0)}→${fmt(avgControlBunch,0)}、前車待ち ${fmt(avgPlainBlocked)}→${fmt(avgControlBlocked)}分。シード: ${seeds.join(", ")}`;
       }
 
       runSweep() {
@@ -1606,7 +1956,7 @@
         const rows = distances.map((d) => {
           const r = this.runFast({ ...base, distanceThresholdStops: d });
           const improve = r.plain.avgWaitMin > 0 ? (r.plain.avgWaitMin - r.control.avgWaitMin) / r.plain.avgWaitMin * 100 : 0;
-          return `${d}停: 待ち改善${fmt(improve,0)}%, 団子度${fmt(r.control.bunchScore,0)}, 最大追加${fmt(r.control.skipMaxExtraMin)}分`;
+          return `${d}停: 待ち改善${fmt(improve,0)}%, 団子度${fmt(r.control.bunchScore,0)}, 前車待ち${fmt(r.control.totalBlockedDelayMin)}分, 最大追加${fmt(r.control.skipMaxExtraMin)}分`;
         });
         $("experimentOutput").innerHTML = `後続車間しきい値スイープ<br>${rows.join("<br>")}`;
       }
@@ -1623,8 +1973,8 @@
         const payload = {
           generatedAt: new Date().toISOString(),
           config: this.config,
-          plain: { metrics: this.plain.computeMetrics(), history: this.plain.history },
-          control: { metrics: this.control.computeMetrics(), history: this.control.history, skipLog: this.control.skipLog }
+          plain: { metrics: this.plain.computeMetrics(), history: this.plain.history, blockLog: this.plain.blockLog },
+          control: { metrics: this.control.computeMetrics(), history: this.control.history, skipLog: this.control.skipLog, blockLog: this.control.blockLog }
         };
         this.download("bus-bunching-results.json", JSON.stringify(payload, null, 2), "application/json");
       }
