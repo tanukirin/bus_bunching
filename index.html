@@ -679,8 +679,8 @@
           <input id="speedRange" type="range" min="1" max="240" value="18">
           <b id="speedLabel">18x</b>
         </div>
-        <button id="exportJsonBtn" title="結果をJSONで保存">JSON</button>
-        <button id="exportCsvBtn" title="主要指標をCSVで保存">CSV</button>
+        <button id="exportJsonBtn" title="現在の単一シードのアニメーション結果をJSONで保存">アニメ結果JSON</button>
+        <button id="exportCsvBtn" title="現在の単一シードの主要指標をCSVで保存">アニメ指標CSV</button>
       </div>
     </div>
 
@@ -739,13 +739,16 @@
                   </div>
                   <div class="field">
                     <label for="seedAverageCountInput">平均シード数</label>
-                    <input id="seedAverageCountInput" type="number" min="1" max="100" value="5">
+                    <input id="seedAverageCountInput" type="number" min="1" max="100000" value="200">
                   </div>
                 </div>
                 <div class="seed-average-actions">
                   <button id="seedAverageRunBtn" class="primary">シード平均を実行</button>
+                  <button id="seedAverageCancelBtn" hidden>中止</button>
                   <button id="seedAverageRandomBtn" title="シード平均の基準シードだけをランダムに変更します">新しいシード</button>
                   <button id="seedAverageSyncBtn">現在の設定から更新</button>
+                  <button id="seedAverageExportJsonBtn" title="直近のシード平均結果をJSONで保存">シード平均JSON</button>
+                  <button id="seedAverageExportCsvBtn" title="直近のシード平均指標をCSVで保存">シード平均CSV</button>
                 </div>
                 <div class="seed-average-status-row">
                   <span id="seedAverageStatus" class="experiment-status">未実行</span>
@@ -1036,6 +1039,11 @@
       .split(",")
       .map((x) => Number.parseInt(x.trim(), 10))
       .filter((n, i, arr) => Number.isInteger(n) && n >= 0 && n < maxExclusive && arr.indexOf(n) === i);
+    const formatSeedList = (seeds, limit = 30) => {
+      const shown = seeds.slice(0, limit).join(", ");
+      const suffix = seeds.length > limit ? ` ... +${seeds.length - limit}` : "";
+      return `${shown}${suffix}`;
+    };
 
     const SEED_AVERAGE_SD_KEYS = [
       "avgWaitMin", "p95WaitMin", "maxWaitMin", "recentAvgWaitMin", "recentP95WaitMin",
@@ -1087,6 +1095,96 @@
       }).filter((row) => Number.isFinite(row.t));
     };
 
+    const addStat = (bucket, value) => {
+      if (!Number.isFinite(value)) return;
+      bucket.n += 1;
+      bucket.sum += value;
+      bucket.sq += value * value;
+    };
+
+    const statMean = (bucket) => bucket.n ? bucket.sum / bucket.n : 0;
+    const statSd = (bucket) => {
+      if (!bucket.n) return 0;
+      const m = statMean(bucket);
+      return Math.sqrt(Math.max(0, bucket.sq / bucket.n - m * m));
+    };
+
+    const emptyStat = () => ({ n: 0, sum: 0, sq: 0 });
+
+    const createStreamingStats = () => ({ scalar: {}, arrays: {} });
+
+    const addMetricStreamingStats = (stats, metrics) => {
+      for (const [key, value] of Object.entries(metrics)) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          if (!stats.scalar[key]) stats.scalar[key] = emptyStat();
+          addStat(stats.scalar[key], value);
+        } else if (Array.isArray(value)) {
+          if (!stats.arrays[key]) stats.arrays[key] = [];
+          value.forEach((item, i) => {
+            if (!stats.arrays[key][i]) stats.arrays[key][i] = emptyStat();
+            addStat(stats.arrays[key][i], item);
+          });
+        }
+      }
+    };
+
+    const meanFromStreamingStats = (stats) => {
+      const out = {};
+      for (const [key, bucket] of Object.entries(stats.scalar)) out[key] = statMean(bucket);
+      for (const [key, buckets] of Object.entries(stats.arrays)) out[key] = buckets.map((bucket) => statMean(bucket || emptyStat()));
+      return out;
+    };
+
+    const sdFromStreamingStats = (stats) => {
+      const out = {};
+      for (const key of SEED_AVERAGE_SD_KEYS) out[key] = stats.scalar[key] ? statSd(stats.scalar[key]) : 0;
+      return out;
+    };
+
+    const addHistoryStreamingStats = (rows, history) => {
+      history.forEach((snapshot, i) => {
+        if (!rows[i]) rows[i] = {};
+        for (const [key, value] of Object.entries(snapshot)) {
+          if (!Number.isFinite(value)) continue;
+          if (!rows[i][key]) rows[i][key] = emptyStat();
+          addStat(rows[i][key], value);
+        }
+      });
+    };
+
+    const historyFromStreamingStats = (rows) => rows.map((row) => {
+      const out = {};
+      for (const [key, bucket] of Object.entries(row)) out[key] = statMean(bucket);
+      return out;
+    }).filter((row) => Number.isFinite(row.t));
+
+    const createSeedAverageAccumulator = () => {
+      const metrics = { plain: createStreamingStats(), control: createStreamingStats() };
+      const histories = { plain: [], control: [] };
+      return {
+        add(result) {
+          addMetricStreamingStats(metrics.plain, result.plain.metrics);
+          addMetricStreamingStats(metrics.control, result.control.metrics);
+          addHistoryStreamingStats(histories.plain, result.plain.history);
+          addHistoryStreamingStats(histories.control, result.control.history);
+        },
+        build(seeds, config) {
+          return {
+            seeds,
+            plainMetrics: meanFromStreamingStats(metrics.plain),
+            controlMetrics: meanFromStreamingStats(metrics.control),
+            plainSd: sdFromStreamingStats(metrics.plain),
+            controlSd: sdFromStreamingStats(metrics.control),
+            plainHistory: historyFromStreamingStats(histories.plain),
+            controlHistory: historyFromStreamingStats(histories.control),
+            stopCount: config.stopCount,
+            durationMin: config.durationMin,
+            config: { ...config }
+          };
+        }
+      };
+    };
+
     const PARAM_HELP = {
       presetSelect: "典型的な運行条件をまとめて切り替えます。選択すると即時にシミュレーションをリセットします。",
       seedInput: "乗客発生と走行遅れを再現するための乱数シードです。同じ値なら同じ条件で比較できます。",
@@ -1116,7 +1214,7 @@
       followerLoadInput: "後続バスの混雑率がこの値を超える場合、乗客を任せるのは危険としてスキップを禁止します。",
       initialDelayInput: "最初の先行バスに与える初期遅延です。0なら団子化のきっかけは運行中のランダム要因に任せます。",
       seedAverageBaseSeedInput: "シード平均の起点にする乱数シードです。現在の設定のランダムシードと同じ値にできます。",
-      seedAverageCountInput: "シード平均で実行する乱数シードの数です。基準シードを起点に、101ずつ増やした条件を平均します。"
+      seedAverageCountInput: "シード平均で実行する乱数シードの数です。基準シードを起点に、101ずつ増やした条件を平均します。上限は100000ですが、大量計算は時間がかかります。"
     };
 
     function applyParameterHelp() {
@@ -1957,6 +2055,7 @@
         this.control = null;
         this.activeResultView = "animation";
         this.seedAverageResult = null;
+        this.seedAverageAbortRequested = false;
         this.running = false;
         this.speed = Number($("speedRange").value);
         this.lastFrame = 0;
@@ -2013,6 +2112,12 @@
         $("seedAverageTab").addEventListener("click", () => this.setResultView("seedAverage"));
         $("multiSeedBtn").addEventListener("click", () => this.setResultView("seedAverage"));
         $("seedAverageRunBtn").addEventListener("click", () => this.runSeedAverage());
+        $("seedAverageCancelBtn").addEventListener("click", () => {
+          this.seedAverageAbortRequested = true;
+          $("seedAverageStatus").textContent = "中止要求中";
+        });
+        $("seedAverageExportJsonBtn").addEventListener("click", () => this.exportSeedAverageJson());
+        $("seedAverageExportCsvBtn").addEventListener("click", () => this.exportSeedAverageCsv());
         $("seedAverageRandomBtn").addEventListener("click", () => {
           $("seedAverageBaseSeedInput").value = Math.floor(Math.random() * 999999) + 1;
           this.onSeedAverageParamInput();
@@ -2053,6 +2158,7 @@
         $("seedAverageStatus").className = "experiment-status";
         $("seedAverageModeBadge").textContent = "未計算";
         $("seedAverageModeBadge").className = "badge";
+        $("seedAverageCancelBtn").hidden = true;
         this.syncSeedAverageControls(true);
         this.renderSeedAveragePreview();
         $("experimentOutput").textContent = "アニメーションとは別に高速計算します。";
@@ -2068,7 +2174,7 @@
 
       seedAverageSeeds() {
         const baseSeed = Math.max(1, Number.parseInt($("seedAverageBaseSeedInput").value, 10) || this.config.seed || 1);
-        const count = clamp(Number.parseInt($("seedAverageCountInput").value, 10) || 5, 1, 100);
+        const count = clamp(Number.parseInt($("seedAverageCountInput").value, 10) || 200, 1, 100000);
         return {
           baseSeed,
           count,
@@ -2081,11 +2187,10 @@
         $("seedAverageBaseSeedInput").value = baseSeed;
         $("seedAverageCountInput").value = count;
         $("seedAverageCountBadge").textContent = `${count} seeds`;
-        const shown = seeds.slice(0, 12).join(", ");
-        const suffix = seeds.length > 12 ? ` ... +${seeds.length - 12}` : "";
-        $("seedAverageSeeds").textContent = `使用予定シード: ${shown}${suffix}`;
+        const warning = count >= 10000 ? " 大量計算のため時間がかかります。実行中は中止できます。" : "";
+        $("seedAverageSeeds").textContent = `使用予定シード: ${formatSeedList(seeds, 12)}${warning}`;
         $("seedAverageUsedSeeds").textContent = this.seedAverageResult
-          ? `直近の計算シード: ${this.seedAverageResult.seeds.join(", ")}`
+          ? `直近の計算シード: ${formatSeedList(this.seedAverageResult.seeds)}`
           : "まだシード平均は実行されていません。条件を確認して実行してください。";
       }
 
@@ -2160,7 +2265,7 @@
           this.renderSeedAveragePreview();
           if (this.seedAverageResult) {
             $("seedAverageCountBadge").textContent = `${this.seedAverageResult.seeds.length} seeds`;
-            $("seedAverageUsedSeeds").textContent = `使用シード: ${this.seedAverageResult.seeds.join(", ")}`;
+            $("seedAverageUsedSeeds").textContent = `使用シード: ${formatSeedList(this.seedAverageResult.seeds)}`;
             this.renderResultData(this.seedAverageResult);
           } else {
             this.renderSeedAverageEmpty();
@@ -2196,7 +2301,7 @@
           this.metric("使用予定", `${seeds.length}`, `${seeds[0]} → ${seeds[seeds.length - 1]}`, "warn"),
           this.metric("結果", "未実行", "実行後に平均値とSDを表示します", "warn"),
           this.metric("アニメーション", "非表示", "平均バス位置は定義しません", "warn"),
-          this.metric("エクスポート", "単一結果", "JSON/CSVはアニメーション結果が対象です", "warn")
+          this.metric("エクスポート", "対応", "実行後にシード平均JSON/CSVを保存できます", "warn")
         ].join("");
         this.clearCharts("シード平均を実行すると表示されます");
         $("comments").innerHTML = [
@@ -2590,42 +2695,47 @@
         $("seedAverageBaseSeedInput").value = baseSeed;
         $("seedAverageCountInput").value = count;
         const base = { ...buildConfigFromInputs(), seed: baseSeed };
+        const updateEvery = count >= 10000 ? 25 : count >= 1000 ? 10 : 3;
         const status = $("seedAverageStatus");
+        this.seedAverageAbortRequested = false;
         status.textContent = "実行中";
         status.className = "experiment-status running";
         $("seedAverageModeBadge").textContent = "計算中";
         $("seedAverageModeBadge").className = "badge yellow";
-        $("seedAverageSeeds").textContent = `使用シード: ${seeds.join(", ")}`;
+        $("seedAverageSeeds").textContent = `使用シード: ${formatSeedList(seeds)}`;
         $("experimentOutput").textContent = "シード平均を高速計算しています。";
         $("seedAverageRunBtn").disabled = true;
+        $("seedAverageCancelBtn").hidden = false;
         try {
-          const results = [];
+          const accumulator = createSeedAverageAccumulator();
+          const processedSeeds = [];
           for (let i = 0; i < seeds.length; i++) {
-            results.push(this.runFastDetailed({ ...base, seed: seeds[i] }));
-            status.textContent = `実行中 ${i + 1} / ${seeds.length}`;
-            if ((i + 1) % 3 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+            if (this.seedAverageAbortRequested) break;
+            const result = this.runFastDetailed({ ...base, seed: seeds[i] });
+            accumulator.add(result);
+            processedSeeds.push(seeds[i]);
+            if ((i + 1) % updateEvery === 0 || i === seeds.length - 1) {
+              status.textContent = `実行中 ${i + 1} / ${seeds.length}`;
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
           }
-          const plainMetricsList = results.map((r) => r.plain.metrics);
-          const controlMetricsList = results.map((r) => r.control.metrics);
-          this.seedAverageResult = {
-            seeds,
-            plainMetrics: averageMetrics(plainMetricsList),
-            controlMetrics: averageMetrics(controlMetricsList),
-            plainSd: sdMetrics(plainMetricsList),
-            controlSd: sdMetrics(controlMetricsList),
-            plainHistory: averageHistories(results.map((r) => r.plain.history)),
-            controlHistory: averageHistories(results.map((r) => r.control.history)),
-            stopCount: base.stopCount,
-            durationMin: base.durationMin
-          };
-          status.textContent = "完了";
-          status.className = "experiment-status done";
-          $("seedAverageModeBadge").textContent = "平均結果";
-          $("seedAverageModeBadge").className = "badge green";
-          $("seedAverageSeeds").textContent = `使用シード: ${seeds.join(", ")}`;
+          if (!processedSeeds.length) {
+            status.textContent = "中止";
+            status.className = "experiment-status error";
+            $("seedAverageModeBadge").textContent = "未計算";
+            $("seedAverageModeBadge").className = "badge";
+            return;
+          }
+          this.seedAverageResult = accumulator.build(processedSeeds, base);
+          const aborted = processedSeeds.length < seeds.length;
+          status.textContent = aborted ? `中止 ${processedSeeds.length} / ${seeds.length}` : "完了";
+          status.className = aborted ? "experiment-status running" : "experiment-status done";
+          $("seedAverageModeBadge").textContent = aborted ? "部分平均" : "平均結果";
+          $("seedAverageModeBadge").className = aborted ? "badge yellow" : "badge green";
+          $("seedAverageSeeds").textContent = `使用シード: ${formatSeedList(processedSeeds)}`;
           const p = this.seedAverageResult.plainMetrics;
           const c = this.seedAverageResult.controlMetrics;
-          $("experimentOutput").innerHTML = `シード平均: 待ち時間 ${fmt(p.avgWaitMin)}→${fmt(c.avgWaitMin)}分、団子度 ${fmt(p.bunchScore,0)}→${fmt(c.bunchScore,0)}、前車待ち ${fmt(p.totalBlockedDelayMin)}→${fmt(c.totalBlockedDelayMin)}分。`;
+          $("experimentOutput").innerHTML = `${aborted ? "シード部分平均" : "シード平均"}: 待ち時間 ${fmt(p.avgWaitMin)}→${fmt(c.avgWaitMin)}分、団子度 ${fmt(p.bunchScore,0)}→${fmt(c.bunchScore,0)}、前車待ち ${fmt(p.totalBlockedDelayMin)}→${fmt(c.totalBlockedDelayMin)}分。`;
           this.setResultView("seedAverage");
         } catch (error) {
           console.error(error);
@@ -2636,6 +2746,7 @@
           $("experimentOutput").textContent = `シード平均の計算に失敗しました: ${error.message || error}`;
         } finally {
           $("seedAverageRunBtn").disabled = false;
+          $("seedAverageCancelBtn").hidden = true;
         }
       }
 
@@ -2685,6 +2796,57 @@
         const rows = [["metric", "plain", "control"], ...keys.map((k) => [k, p[k], c[k]])];
         const csv = rows.map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n");
         this.download("bus-bunching-metrics.csv", csv, "text/csv");
+      }
+
+      exportSeedAverageJson() {
+        if (!this.seedAverageResult) {
+          window.alert("シード平均結果がまだありません。先にシード平均を実行してください。");
+          return;
+        }
+        const payload = {
+          type: "bus-bunching-seed-average-results",
+          version: 1,
+          generatedAt: new Date().toISOString(),
+          config: this.seedAverageResult.config || buildConfigFromInputs(),
+          seedAverage: {
+            seeds: this.seedAverageResult.seeds,
+            seedCount: this.seedAverageResult.seeds.length,
+            plain: {
+              metrics: this.seedAverageResult.plainMetrics,
+              sd: this.seedAverageResult.plainSd,
+              history: this.seedAverageResult.plainHistory
+            },
+            control: {
+              metrics: this.seedAverageResult.controlMetrics,
+              sd: this.seedAverageResult.controlSd,
+              history: this.seedAverageResult.controlHistory
+            }
+          }
+        };
+        this.download("bus-bunching-seed-average-results.json", JSON.stringify(payload, null, 2), "application/json");
+      }
+
+      exportSeedAverageCsv() {
+        if (!this.seedAverageResult) {
+          window.alert("シード平均結果がまだありません。先にシード平均を実行してください。");
+          return;
+        }
+        const p = this.seedAverageResult.plainMetrics;
+        const c = this.seedAverageResult.controlMetrics;
+        const psd = this.seedAverageResult.plainSd || {};
+        const csd = this.seedAverageResult.controlSd || {};
+        const keys = [...new Set([...Object.keys(p), ...Object.keys(c)])]
+          .filter((key) => typeof p[key] === "number" || typeof c[key] === "number")
+          .sort();
+        const rows = [
+          ["seed_count", this.seedAverageResult.seeds.length],
+          ["seeds", this.seedAverageResult.seeds.join(" ")],
+          [],
+          ["metric", "plain_mean", "control_mean", "plain_sd", "control_sd"],
+          ...keys.map((key) => [key, p[key] ?? "", c[key] ?? "", psd[key] ?? "", csd[key] ?? ""])
+        ];
+        const csv = rows.map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n");
+        this.download("bus-bunching-seed-average-metrics.csv", csv, "text/csv");
       }
 
       exportConfig() {
