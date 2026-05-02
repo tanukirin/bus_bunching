@@ -142,6 +142,53 @@
       font-size: 16px;
     }
 
+    .settings-panel .panel-header {
+      align-items: flex-start;
+      flex-wrap: wrap;
+      row-gap: 9px;
+    }
+
+    .settings-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+    }
+
+    .settings-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .settings-actions button {
+      min-height: 32px;
+    }
+
+    .settings-actions input[type="file"] {
+      display: none;
+    }
+
+    .settings-state {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: #eef1f3;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .settings-state.dirty {
+      background: #fff3d7;
+      color: #8a5e08;
+    }
+
     .panel-body {
       padding: 14px;
     }
@@ -312,6 +359,12 @@
       font-size: 12px;
     }
 
+    .field label[title],
+    .field input[title],
+    .field select[title] {
+      cursor: help;
+    }
+
     .field small {
       color: var(--muted);
       line-height: 1.35;
@@ -440,6 +493,10 @@
       }
 
       .toolbar {
+        justify-content: flex-start;
+      }
+
+      .settings-actions {
         justify-content: flex-start;
       }
 
@@ -601,8 +658,20 @@
       </main>
 
       <aside class="side">
-        <section class="panel">
-          <div class="panel-header"><h2>設定</h2></div>
+        <section class="panel settings-panel" id="settingsPanel">
+          <div class="panel-header">
+            <div class="settings-title">
+              <h2>設定</h2>
+              <span id="settingsState" class="settings-state">反映済み</span>
+            </div>
+            <div class="settings-actions">
+              <button id="applyBtn" class="primary">設定を反映</button>
+              <button id="randomSeedBtn">新しいシード</button>
+              <button id="exportConfigBtn">設定JSON</button>
+              <button id="importConfigBtn">設定読込</button>
+              <input id="configFileInput" type="file" accept="application/json,.json">
+            </div>
+          </div>
           <div class="panel-body">
             <div class="form-grid">
               <div class="field full">
@@ -699,8 +768,9 @@
                   <input id="crowdingThresholdInput" type="number" min="0.3" max="1" step="0.05" value="0.8">
                 </div>
                 <div class="field">
-                  <label for="randomDelayInput">区間ランダム遅延 秒</label>
-                  <input id="randomDelayInput" type="number" min="0" max="90" value="26">
+                  <label for="randomDelayInput">区間平均遅れ 秒</label>
+                  <input id="randomDelayInput" type="number" min="0" max="180" step="0.1" value="7.4">
+                  <small>各停留所間に平均して加わる信号・交通流の遅れです。</small>
                 </div>
                 <div class="field">
                   <label for="hotspotInput">重要・集中停留所</label>
@@ -721,10 +791,6 @@
               </div>
             </details>
 
-            <div style="margin-top:12px; display:flex; gap:8px;">
-              <button id="applyBtn" class="primary">設定を反映</button>
-              <button id="randomSeedBtn">新しいシード</button>
-            </div>
           </div>
         </section>
 
@@ -776,10 +842,55 @@
       return b[idx];
     };
     const circularForward = (from, to, length) => (to - from + length) % length;
+    const NOISE_MEAN_FACTOR = 0.24 * 0.5 + 0.76 * 0.22 * 0.5 + 0.035 * ((0.6 + 1.8) / 2);
+    const legacyDelayScaleToMean = (baseTravelSec, scaleSec) => Math.max(0, baseTravelSec * 0.02 + Math.max(0, scaleSec) * NOISE_MEAN_FACTOR);
+    const delayMeanToScale = (meanSec) => Math.max(0, meanSec) / NOISE_MEAN_FACTOR;
+    const positiveModulo = (value, length) => ((value % length) + length) % length;
     const parseList = (txt, maxExclusive) => String(txt || "")
       .split(",")
       .map((x) => Number.parseInt(x.trim(), 10))
       .filter((n, i, arr) => Number.isInteger(n) && n >= 0 && n < maxExclusive && arr.indexOf(n) === i);
+
+    const PARAM_HELP = {
+      presetSelect: "典型的な運行条件をまとめて切り替えます。選択すると即時にシミュレーションをリセットします。",
+      seedInput: "乗客発生と走行遅れを再現するための乱数シードです。同じ値なら同じ条件で比較できます。",
+      durationInput: "シミュレーションする時間です。長いほど団子化と回復の長期傾向を見やすくなります。",
+      stopCountInput: "環状路線上の停留所数です。多いほど路線が長くなります。",
+      busCountInput: "同じ路線を走るバス台数です。多いほど高頻度になり、後続車が接近しやすくなります。",
+      demandInput: "全停留所の乗客到着率に掛ける倍率です。大きいほど待ち行列と停車時間が増えます。",
+      capacityInput: "バス1台に乗れる最大人数です。超過した乗客は停留所に残り、満員通過として集計されます。",
+      policySelect: "降車専用スキップを発動する判定方式です。距離、時間、またはその両方で判定します。",
+      distanceThresholdInput: "後続バスが何停留所以内なら制御候補にするかを指定します。",
+      timeThresholdInput: "後続バスが対象停留所へ何分以内に到着見込みなら制御候補にするかを指定します。",
+      delayThresholdInput: "先行バスが何分以上遅れているときだけ降車専用スキップを検討するかを指定します。",
+      speedInput: "停留所間を走る基準速度です。停車時間や前車待ちは含みません。",
+      distanceInput: "隣接停留所間の距離です。基本速度と合わせて基準走行時間を決めます。",
+      boardTimeInput: "乗車客1人あたりの処理時間です。停車時間に人数分だけ加算されます。",
+      alightTimeInput: "降車客1人あたりの処理時間です。停車時間に人数分だけ加算されます。",
+      crowdedExtraInput: "混雑率がしきい値以上のとき、乗車処理と降車処理それぞれの固定時間に追加します。",
+      stopLossInput: "停留所への寄せ、減速、発進、交通流への復帰にかかる停車ごとのロスです。",
+      doorTimeInput: "ドア開閉と客扱い開始・終了にかかる停車ごとの基本時間です。",
+      boardingSetupInput: "乗車客が1人以上いる場合だけ加算する固定時間です。",
+      alightingSetupInput: "降車客が1人以上いる場合だけ加算する固定時間です。",
+      crowdingThresholdInput: "車内人数 ÷ 定員がこの値以上なら混雑時固定追加秒を加えます。",
+      randomDelayInput: "各停留所間に平均して加わる信号・交通流のランダム遅れです。毎区間必ずこの秒数遅れる意味ではありません。",
+      hotspotInput: "需要が集中し、降車専用スキップを禁止する停留所番号です。カンマ区切りで入力します。",
+      hotspotMultiplierInput: "重要・集中停留所の乗客発生率と目的地選択の重みを強める倍率です。",
+      followerLoadInput: "後続バスの混雑率がこの値を超える場合、乗客を任せるのは危険としてスキップを禁止します。",
+      initialDelayInput: "最初の先行バスに与える初期遅延です。0なら団子化のきっかけは運行中のランダム要因に任せます。"
+    };
+
+    function applyParameterHelp() {
+      for (const [id, help] of Object.entries(PARAM_HELP)) {
+        const input = $(id);
+        if (!input) continue;
+        input.title = help;
+        input.setAttribute("aria-label", `${input.labels?.[0]?.textContent || id}: ${help}`);
+        for (const label of input.labels || []) {
+          label.title = help;
+        }
+      }
+    }
 
     class SeededRng {
       constructor(seed) {
@@ -877,6 +988,13 @@
       c.busCount = clamp(Math.round(c.busCount), 3, Math.min(10, c.stopCount - 2));
       c.durationSec = Math.round(c.durationMin * 60);
       c.baseTravelSec = Math.max(20, c.stopDistanceKm / Math.max(4, c.baseSpeedKmh) * 3600);
+      const legacyRandomDelayScaleSec = Number.isFinite(c.randomDelaySec) ? c.randomDelaySec : 26;
+      if (!Number.isFinite(c.randomDelayMeanSec)) {
+        c.randomDelayMeanSec = legacyDelayScaleToMean(c.baseTravelSec, legacyRandomDelayScaleSec);
+      }
+      c.randomDelayMeanSec = clamp(c.randomDelayMeanSec, 0, 180);
+      c.randomDelayScaleSec = delayMeanToScale(c.randomDelayMeanSec);
+      delete c.randomDelaySec;
       c.doorTimeSec = Number.isFinite(c.doorTimeSec) ? c.doorTimeSec : 4;
       c.stopManeuverLossSec = Number.isFinite(c.stopManeuverLossSec) ? c.stopManeuverLossSec : 14;
       c.boardingSetupSec = Number.isFinite(c.boardingSetupSec) ? c.boardingSetupSec : 2;
@@ -887,6 +1005,7 @@
       c.sampleIntervalSec = 15;
       c.waitWindowSec = 300;
       c.arrivalQuantumSec = 5;
+      c.noiseBucketSec = 60;
       c.controlEnabled = raw.controlEnabled !== false;
       c.seed = Number(raw.seed) || 1;
       c.hotspotStops = (c.hotspotStops || []).filter((n) => n >= 0 && n < c.stopCount);
@@ -914,7 +1033,7 @@
         boardingSetupSec: Number($("boardingSetupInput").value),
         alightingSetupSec: Number($("alightingSetupInput").value),
         crowdingThreshold: Number($("crowdingThresholdInput").value),
-        randomDelaySec: Number($("randomDelayInput").value),
+        randomDelayMeanSec: Number($("randomDelayInput").value),
         hotspotStops: parseList($("hotspotInput").value, stopCount),
         hotspotMultiplier: Number($("hotspotMultiplierInput").value),
         initialDelaySec: Number($("initialDelayInput").value),
@@ -943,7 +1062,7 @@
       $("boardingSetupInput").value = c.boardingSetupSec;
       $("alightingSetupInput").value = c.alightingSetupSec;
       $("crowdingThresholdInput").value = c.crowdingThreshold;
-      $("randomDelayInput").value = c.randomDelaySec;
+      $("randomDelayInput").value = fmt(c.randomDelayMeanSec, 1);
       $("hotspotInput").value = c.hotspotStops.join(",");
       $("hotspotMultiplierInput").value = c.hotspotMultiplier;
       $("initialDelayInput").value = c.initialDelaySec;
@@ -997,11 +1116,13 @@
         return candidates[candidates.length - 1].stop;
       }
 
-      static travelNoise(config, busId, segmentIndex) {
-        const rng = new SeededRng(config.seed * 100003 + busId * 9176 + segmentIndex * 7919);
-        const jitter = rng.range(-0.09, 0.13) * config.baseTravelSec;
-        const signal = rng.next() < 0.24 ? rng.range(0, config.randomDelaySec) : rng.range(0, config.randomDelaySec * 0.22);
-        const surge = rng.next() < 0.035 ? rng.range(config.randomDelaySec * 0.6, config.randomDelaySec * 1.8) : 0;
+      static travelNoise(config, fromStop, startTimeSec) {
+        const bucket = Math.floor(startTimeSec / Math.max(1, config.noiseBucketSec || 60));
+        const rng = new SeededRng(config.seed * 100003 + fromStop * 9176 + bucket * 7919);
+        const scale = Number.isFinite(config.randomDelayScaleSec) ? config.randomDelayScaleSec : Math.max(0, config.randomDelaySec || 0);
+        const jitter = rng.range(-0.1, 0.1) * config.baseTravelSec;
+        const signal = rng.next() < 0.24 ? rng.range(0, scale) : rng.range(0, scale * 0.22);
+        const surge = rng.next() < 0.035 ? rng.range(scale * 0.6, scale * 1.8) : 0;
         return Math.max(-config.baseTravelSec * 0.18, jitter + signal + surge);
       }
     }
@@ -1054,16 +1175,20 @@
         const buses = [];
         const spacing = this.config.stopCount / this.config.busCount;
         for (let i = 0; i < this.config.busCount; i++) {
-          const pos = (this.config.stopCount - i * spacing) % this.config.stopCount;
-          const stop = Math.round(pos) % this.config.stopCount;
+          const routePos = -i * spacing;
+          const pos = positiveModulo(routePos, this.config.stopCount);
+          const routeSegmentStart = Math.floor(routePos);
+          const stop = positiveModulo(routeSegmentStart, this.config.stopCount);
           buses.push({
             id: i + 1,
             pos,
+            routePos,
+            routeSegmentStart,
             fromStop: stop,
             targetStop: (stop + 1) % this.config.stopCount,
             status: i === 0 && this.config.initialDelaySec > 0 ? "dwelling" : "moving",
             dwellRemaining: i === 0 && this.config.initialDelaySec > 0 ? this.config.initialDelaySec : 0,
-            segmentRemaining: Math.max(1, this.config.baseTravelSec * (1 - (pos - Math.floor(pos)))),
+            segmentRemaining: Math.max(1, this.config.baseTravelSec * (1 - (routePos - routeSegmentStart))),
             segmentDuration: this.config.baseTravelSec,
             segmentIndex: 0,
             onboard: [],
@@ -1084,9 +1209,11 @@
           }
           if (i !== 0 || this.config.initialDelaySec <= 0) {
             const bus = buses[buses.length - 1];
-            this.startSegment(bus, Math.floor(pos), false);
-            bus.segmentRemaining = bus.segmentDuration * (1 - (pos - Math.floor(pos)));
-            bus.pos = pos;
+            this.startSegment(bus, stop, false);
+            const progress = routePos - routeSegmentStart;
+            bus.segmentRemaining = bus.segmentDuration * (1 - progress);
+            bus.routePos = routePos;
+            bus.pos = positiveModulo(routePos, this.config.stopCount);
           }
         }
         return buses;
@@ -1094,11 +1221,16 @@
 
       startSegment(bus, fromStop, advanceCounter = true) {
         if (advanceCounter) bus.segmentIndex++;
-        const duration = Math.max(18, this.config.baseTravelSec + EventGenerator.travelNoise(this.config, bus.id, bus.segmentIndex));
-        bus.fromStop = fromStop;
-        bus.targetStop = (fromStop + 1) % this.config.stopCount;
+        const routeStart = Number.isFinite(bus.routePos) ? Math.floor(bus.routePos) : fromStop;
+        const circularFrom = positiveModulo(routeStart, this.config.stopCount);
+        const duration = Math.max(18, this.config.baseTravelSec + EventGenerator.travelNoise(this.config, circularFrom, this.time));
+        bus.routeSegmentStart = routeStart;
+        bus.fromStop = circularFrom;
+        bus.targetStop = positiveModulo(routeStart + 1, this.config.stopCount);
         bus.segmentDuration = duration;
         bus.segmentRemaining = duration;
+        bus.routePos = routeStart;
+        bus.pos = positiveModulo(bus.routePos, this.config.stopCount);
         bus.status = "moving";
         bus.blockedStopId = null;
         bus.blockedStartTime = null;
@@ -1144,20 +1276,31 @@
           } else if (bus.status === "blocked") {
             this.updateBlockedBus(bus, actualDt);
           } else {
-            bus.segmentRemaining -= actualDt;
-            const progress = clamp(1 - bus.segmentRemaining / bus.segmentDuration, 0, 1);
-            bus.pos = (bus.fromStop + progress) % this.config.stopCount;
+            const proposedRemaining = bus.segmentRemaining - actualDt;
+            const proposedProgress = clamp(1 - proposedRemaining / bus.segmentDuration, 0, 1);
+            const proposedRoutePos = bus.routeSegmentStart + proposedProgress;
+            const maxRoutePos = this.maxRoutePosBeforeLeader(bus);
+            const cappedRoutePos = Math.min(proposedRoutePos, maxRoutePos);
+            const capped = cappedRoutePos < proposedRoutePos - 1e-6;
+            bus.routePos = cappedRoutePos;
+            bus.pos = positiveModulo(bus.routePos, this.config.stopCount);
+            const remainingRatio = clamp(bus.routeSegmentStart + 1 - bus.routePos, 0, 1);
+            bus.segmentRemaining = remainingRatio * bus.segmentDuration;
             const idealTravel = this.config.baseTravelSec;
             const actualTravel = this.config.baseTravelSec + Math.max(0, bus.segmentDuration - idealTravel);
             bus.delaySec += Math.max(0, (actualTravel - idealTravel) / Math.max(1, bus.segmentDuration) * actualDt);
+            if (capped) {
+              bus.delaySec += actualDt;
+              bus.lastAction = "前車追従";
+            }
             bus.delaySec = Math.max(0, bus.delaySec - actualDt * 0.14);
-            if (bus.segmentRemaining <= 0) {
+            if (!capped && proposedRemaining <= 0) {
+              bus.routePos = bus.routeSegmentStart + 1;
               bus.pos = bus.targetStop;
               this.handleArrival(bus, bus.targetStop);
             }
           }
         }
-        this.enforceNoOvertaking();
         this.time = nextTime;
         const lastSample = this.lastSampleTime ?? 0;
         if (this.time - lastSample >= this.config.sampleIntervalSec || this.time >= this.config.durationSec) {
@@ -1165,19 +1308,38 @@
         }
       }
 
+      maxRoutePosBeforeLeader(bus) {
+        const epsilon = 0.012;
+        const ordered = [...this.buses].sort((a, b) => a.id - b.id);
+        const index = ordered.findIndex((b) => b.id === bus.id);
+        if (index < 0) return Infinity;
+        const leader = index === 0 ? ordered[ordered.length - 1] : ordered[index - 1];
+        const leaderRoutePos = index === 0 ? leader.routePos + this.config.stopCount : leader.routePos;
+        return leaderRoutePos - epsilon;
+      }
+
       enforceNoOvertaking() {
         const epsilon = 0.012;
         const ordered = [...this.buses].sort((a, b) => a.id - b.id);
-        for (let i = 1; i < ordered.length; i++) {
-          const leader = ordered[i - 1];
-          const follower = ordered[i];
-          const gap = circularForward(follower.pos, leader.pos, this.config.stopCount);
-          if (gap < epsilon) {
-            follower.pos = (leader.pos - epsilon + this.config.stopCount) % this.config.stopCount;
-            if (follower.status === "moving") {
-              follower.segmentRemaining = Math.max(follower.segmentRemaining, 0.5);
+        const clampBehind = (bus, maxRoutePos) => {
+          if (!Number.isFinite(bus.routePos) || bus.routePos <= maxRoutePos) return;
+          bus.routePos = maxRoutePos;
+          bus.pos = positiveModulo(bus.routePos, this.config.stopCount);
+          if (bus.status === "moving") {
+            if (!Number.isFinite(bus.routeSegmentStart) || bus.routePos < bus.routeSegmentStart || bus.routePos > bus.routeSegmentStart + 1) {
+              bus.routeSegmentStart = Math.floor(bus.routePos);
+              bus.fromStop = positiveModulo(bus.routeSegmentStart, this.config.stopCount);
+              bus.targetStop = positiveModulo(bus.routeSegmentStart + 1, this.config.stopCount);
             }
+            const remainingRatio = clamp(bus.routeSegmentStart + 1 - bus.routePos, 0, 1);
+            bus.segmentRemaining = Math.max(0.5, remainingRatio * bus.segmentDuration);
           }
+        };
+        for (let pass = 0; pass < 2; pass++) {
+          for (let i = 1; i < ordered.length; i++) {
+            clampBehind(ordered[i], ordered[i - 1].routePos - epsilon);
+          }
+          clampBehind(ordered[0], ordered[ordered.length - 1].routePos + this.config.stopCount - epsilon);
         }
       }
 
@@ -1193,6 +1355,8 @@
       beginService(bus, stop) {
         this.removeFromBlockedQueue(bus, stop);
         this.finishBlockedIfNeeded(bus, stop);
+        bus.routePos = Math.round(bus.routePos);
+        bus.pos = stop;
         const alighting = [];
         const staying = [];
         for (const p of bus.onboard) {
@@ -1244,6 +1408,9 @@
         bus.totalDwell += dwell;
         this.totalDwell += dwell;
         bus.fromStop = stop;
+        bus.routePos = Math.round(bus.routePos);
+        bus.routeSegmentStart = bus.routePos;
+        bus.pos = stop;
         if (dwell > 0) {
           this.occupyStop(stop, bus.id, dwell);
           bus.status = "dwelling";
@@ -1296,7 +1463,8 @@
         bus.blockedStartTime = this.time;
         bus.blockedCurrentSec = 0;
         bus.segmentRemaining = 0;
-        bus.pos = (stopId - 0.08 + this.config.stopCount) % this.config.stopCount;
+        bus.routePos = Math.round(bus.routePos) - 0.08;
+        bus.pos = positiveModulo(bus.routePos, this.config.stopCount);
         bus.lastAction = "前車待ち";
       }
 
@@ -1347,7 +1515,7 @@
         if (!follower) return { skip: false, reason: "no follower" };
         const followerLoad = follower.onboard.length / this.config.capacity;
         if (followerLoad > this.config.followerLoadLimit) return { skip: false, reason: "follower crowded" };
-        const distanceBehind = circularForward(follower.pos, bus.pos, this.config.stopCount);
+        const distanceBehind = this.routeDistanceBehind(follower, bus);
         const etaToStop = this.estimateEtaToStop(follower, stop);
         const distanceOk = distanceBehind <= this.config.distanceThresholdStops;
         const timeOk = etaToStop <= this.config.timeThresholdMin * 60;
@@ -1361,7 +1529,7 @@
         let bestDist = Infinity;
         for (const other of this.buses) {
           if (other.id === bus.id) continue;
-          const dist = circularForward(other.pos, bus.pos, this.config.stopCount);
+          const dist = this.routeDistanceBehind(other, bus);
           if (dist > 0.01 && dist < bestDist) {
             best = other;
             bestDist = dist;
@@ -1370,8 +1538,21 @@
         return best;
       }
 
+      routeDistanceBehind(follower, leader) {
+        let dist = leader.routePos - follower.routePos;
+        while (dist <= 0) dist += this.config.stopCount;
+        return dist;
+      }
+
+      absoluteStopAhead(bus, stop) {
+        const lap = Math.floor(bus.routePos / this.config.stopCount);
+        let target = lap * this.config.stopCount + stop;
+        while (target < bus.routePos - 1e-6) target += this.config.stopCount;
+        return target;
+      }
+
       estimateEtaToStop(bus, stop) {
-        const distance = circularForward(bus.pos, stop, this.config.stopCount);
+        const distance = this.absoluteStopAhead(bus, stop) - bus.routePos;
         const movingPart = distance * this.config.baseTravelSec;
         const dwellPart = bus.status === "dwelling" ? Math.max(0, bus.dwellRemaining) : 0;
         return dwellPart + movingPart;
@@ -1542,15 +1723,31 @@
         }
         $("presetSelect").value = "urban";
         applyConfigToInputs(this.config);
+        this.setSettingsDirty(false);
         $("playBtn").addEventListener("click", () => this.toggleRun());
         $("stepBtn").addEventListener("click", () => { this.step(10); this.render(); });
         $("resetBtn").addEventListener("click", () => this.reset());
-        $("applyBtn").addEventListener("click", () => { this.config = buildConfigFromInputs(); this.reset(); });
-        $("randomSeedBtn").addEventListener("click", () => { $("seedInput").value = Math.floor(Math.random() * 999999) + 1; this.config = buildConfigFromInputs(); this.reset(); });
+        $("applyBtn").addEventListener("click", () => {
+          this.config = buildConfigFromInputs();
+          this.setSettingsDirty(false);
+          this.reset();
+        });
+        $("randomSeedBtn").addEventListener("click", () => {
+          $("seedInput").value = Math.floor(Math.random() * 999999) + 1;
+          this.config = buildConfigFromInputs();
+          this.setSettingsDirty(false);
+          this.reset();
+        });
         $("presetSelect").addEventListener("change", () => {
           this.config = normalizeConfig(PRESETS[$("presetSelect").value]);
           applyConfigToInputs(this.config);
+          this.setSettingsDirty(false);
           this.reset();
+        });
+        $("settingsPanel").querySelectorAll("input, select").forEach((el) => {
+          if (el.id === "presetSelect") return;
+          el.addEventListener("input", () => this.setSettingsDirty(true));
+          el.addEventListener("change", () => this.setSettingsDirty(true));
         });
         $("speedRange").addEventListener("input", () => {
           this.speed = Number($("speedRange").value);
@@ -1558,8 +1755,19 @@
         });
         $("exportJsonBtn").addEventListener("click", () => this.exportJson());
         $("exportCsvBtn").addEventListener("click", () => this.exportCsv());
+        $("exportConfigBtn").addEventListener("click", () => this.exportConfig());
+        $("importConfigBtn").addEventListener("click", () => $("configFileInput").click());
+        $("configFileInput").addEventListener("change", (event) => this.importConfigFile(event));
         $("multiSeedBtn").addEventListener("click", () => this.runMultiSeed());
         $("sweepBtn").addEventListener("click", () => this.runSweep());
+        applyParameterHelp();
+      }
+
+      setSettingsDirty(dirty) {
+        const el = $("settingsState");
+        if (!el) return;
+        el.textContent = dirty ? "未反映" : "反映済み";
+        el.classList.toggle("dirty", dirty);
       }
 
       reset() {
@@ -1714,7 +1922,7 @@
           const load = bus.onboard.length / c.capacity;
           const delayed = bus.delaySec > c.delayThresholdMin * 60;
           const follower = sim.findFollower(bus);
-          const followerClose = follower && circularForward(follower.pos, bus.pos, c.stopCount) <= c.distanceThresholdStops;
+          const followerClose = follower && sim.routeDistanceBehind(follower, bus) <= c.distanceThresholdStops;
           const skipping = bus.justSkippedStop != null || bus.lastAction.startsWith("降車のみ");
           const blocked = bus.status === "blocked";
           const color = blocked ? "#c83f3f" : skipping && isControl ? "#7357c8" : load > 0.85 ? "#c83f3f" : delayed ? "#b47b13" : followerClose ? "#16848b" : "#2c6fbb";
@@ -1991,6 +2199,63 @@
         const rows = [["metric", "plain", "control"], ...keys.map((k) => [k, p[k], c[k]])];
         const csv = rows.map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n");
         this.download("bus-bunching-metrics.csv", csv, "text/csv");
+      }
+
+      exportConfig() {
+        const payload = {
+          type: "bus-bunching-config",
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          config: this.config
+        };
+        this.download("bus-bunching-config.json", JSON.stringify(payload, null, 2), "application/json");
+      }
+
+      importConfigFile(event) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const payload = JSON.parse(String(reader.result || ""));
+            const imported = this.extractConfig(payload);
+            this.config = normalizeConfig(imported);
+            this.setPresetToCustom(this.config.name || "読み込み設定");
+            applyConfigToInputs(this.config);
+            this.setSettingsDirty(false);
+            this.reset();
+          } catch (error) {
+            window.alert(`設定JSONを読み込めませんでした。\n${error.message}`);
+          }
+        };
+        reader.onerror = () => window.alert("設定JSONを読み込めませんでした。");
+        reader.readAsText(file);
+      }
+
+      extractConfig(payload) {
+        const config = payload?.config || payload?.settings || payload;
+        if (!config || typeof config !== "object" || Array.isArray(config)) {
+          throw new Error("config オブジェクトが見つかりません。");
+        }
+        const required = ["stopCount", "busCount", "durationMin", "demandMultiplier"];
+        const missing = required.filter((key) => !Number.isFinite(Number(config[key])));
+        if (missing.length) {
+          throw new Error(`必須パラメータが不足しています: ${missing.join(", ")}`);
+        }
+        return config;
+      }
+
+      setPresetToCustom(name) {
+        const value = "imported";
+        let option = [...$("presetSelect").options].find((opt) => opt.value === value);
+        if (!option) {
+          option = document.createElement("option");
+          option.value = value;
+          $("presetSelect").appendChild(option);
+        }
+        option.textContent = name || "読み込み設定";
+        $("presetSelect").value = value;
       }
 
       download(name, text, type) {
