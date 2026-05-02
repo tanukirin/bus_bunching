@@ -1075,7 +1075,7 @@
     };
 
     const SEED_AVERAGE_SD_KEYS = [
-      "avgWaitMin", "p95WaitMin", "maxWaitMin", "recentAvgWaitMin", "recentP95WaitMin",
+      "avgWaitMin", "p95WaitMin", "maxWaitMin", "recentAvgWaitMin", "recentP95WaitMin", "recentBoardedPassengers",
       "avgTotalMin", "p95TotalMin",
       "bunchScore", "bunchDurationMin", "headwayErrorSum", "headwayRmseStops",
       "minHeadwayStops", "maxHeadwayStops", "avgDelayMin", "maxDelayMin",
@@ -2107,6 +2107,7 @@
           p95TotalMin: metrics.p95TotalMin,
           recentAvgWaitMin: metrics.recentAvgWaitMin,
           recentP95WaitMin: metrics.recentP95WaitMin,
+          recentBoardedPassengers: metrics.recentBoardedPassengers,
           minHeadwayStops: metrics.minHeadwayStops,
           maxHeadwayStops: metrics.maxHeadwayStops,
           headwayRmseStops: metrics.headwayRmseStops,
@@ -2125,7 +2126,7 @@
       computeMetrics() {
         const waits = this.completed.filter((p) => p.boardTime != null).map((p) => (p.boardTime - p.arrivalTime) / 60);
         const recentStart = Math.max(0, this.time - this.config.waitWindowSec);
-        const recentWaits = this.completed
+        const recentWaits = [...this.allPassengers.values()]
           .filter((p) => p.boardTime != null && p.boardTime > recentStart && p.boardTime <= this.time)
           .map((p) => (p.boardTime - p.arrivalTime) / 60);
         const rides = this.completed.map((p) => (p.alightTime - p.boardTime) / 60).filter(Number.isFinite);
@@ -2797,6 +2798,7 @@
           ["平均待ち時間 分", "avgWaitMin"],
           ["直近5分 平均待ち 分", "recentAvgWaitMin"],
           ["直近5分 95%待ち 分", "recentP95WaitMin"],
+          ["直近5分 乗車人数", "recentBoardedPassengers"],
           ["中央値待ち時間 分", "medianWaitMin"],
           ["95%待ち時間 分", "p95WaitMin"],
           ["最大待ち時間 分", "maxWaitMin"],
