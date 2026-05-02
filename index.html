@@ -200,6 +200,43 @@
       margin-bottom: 16px;
     }
 
+    .result-tabs {
+      display: inline-flex;
+      gap: 6px;
+      margin: 0 0 12px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .tab-button {
+      min-height: 32px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .tab-button.active {
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .tab-button:disabled {
+      opacity: 0.48;
+      cursor: not-allowed;
+    }
+
+    .view-note {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--muted);
+      padding: 18px;
+      line-height: 1.55;
+    }
+
     .metric {
       background: #fff;
       border: 1px solid var(--line);
@@ -476,11 +513,52 @@
       flex-wrap: wrap;
     }
 
+    .experiment-row .field {
+      min-width: 130px;
+      max-width: 170px;
+    }
+
     .experiment-output {
       margin-top: 10px;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.5;
+    }
+
+    .experiment-status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      margin-top: 10px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef1f3;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .experiment-status.running {
+      background: #fff3d7;
+      color: #8a5e08;
+    }
+
+    .experiment-status.done {
+      background: #e8f3ed;
+      color: var(--green);
+    }
+
+    .experiment-status.error {
+      background: #fbe9e7;
+      color: var(--red);
+    }
+
+    .seed-list {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      word-break: break-word;
     }
 
     @media (max-width: 1180px) {
@@ -551,11 +629,16 @@
       </div>
     </div>
 
+    <div class="result-tabs" role="tablist" aria-label="結果表示">
+      <button id="animationTab" class="tab-button active" type="button" role="tab" aria-selected="true">アニメーション結果</button>
+      <button id="seedAverageTab" class="tab-button" type="button" role="tab" aria-selected="false" disabled>シード平均</button>
+    </div>
+
     <div id="summary" class="summary-grid"></div>
 
     <div class="grid">
       <main>
-        <section class="panel">
+        <section class="panel" id="routePanel">
           <div class="panel-header">
             <h2>横並び比較</h2>
             <div>
@@ -581,6 +664,20 @@
                 <svg id="controlRoute" class="route" role="img" aria-label="制御ありの路線表示"></svg>
                 <div id="controlMini" class="mini-stats"></div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="seedAverageInfoPanel" hidden>
+          <div class="panel-header">
+            <h2>シード平均ビュー</h2>
+            <span class="badge blue" id="seedAverageCountBadge">0 seeds</span>
+          </div>
+          <div class="panel-body">
+            <div class="view-note">
+              複数シードの平均では現在位置アニメーションを定義しにくいため、路線図は表示しません。
+              上部サマリー、主要グラフ、自動コメント、詳細指標、停留所別ランキングで同じ粒度の判断ができます。
+              <div id="seedAverageUsedSeeds" class="seed-list"></div>
             </div>
           </div>
         </section>
@@ -680,7 +777,7 @@
               </div>
               <div class="field">
                 <label for="seedInput">ランダムシード</label>
-                <input id="seedInput" type="number" min="1" value="420550">
+                <input id="seedInput" type="number" min="1" value="200411">
               </div>
               <div class="field">
                 <label for="durationInput">時間 分</label>
@@ -696,11 +793,11 @@
               </div>
               <div class="field">
                 <label for="demandInput">需要倍率</label>
-                <input id="demandInput" type="number" min="0.3" max="3" step="0.1" value="0.7">
+                <input id="demandInput" type="number" min="0.3" max="3" step="0.1" value="0.8">
               </div>
               <div class="field">
                 <label for="capacityInput">定員</label>
-                <input id="capacityInput" type="number" min="20" max="110" value="30">
+                <input id="capacityInput" type="number" min="20" max="110" value="36">
               </div>
               <div class="field full">
                 <label for="policySelect">制御方式</label>
@@ -818,9 +915,15 @@
           <div class="panel-header"><h2>軽量実験</h2></div>
           <div class="panel-body">
             <div class="experiment-row">
-              <button id="multiSeedBtn">5シード平均</button>
+              <div class="field">
+                <label for="seedAverageCountInput">平均シード数</label>
+                <input id="seedAverageCountInput" type="number" min="1" max="100" value="5">
+              </div>
+              <button id="multiSeedBtn">シード平均を実行</button>
               <button id="sweepBtn">しきい値スイープ</button>
             </div>
+            <div id="seedAverageStatus" class="experiment-status">未実行</div>
+            <div id="seedAverageSeeds" class="seed-list"></div>
             <div id="experimentOutput" class="experiment-output">アニメーションとは別に高速計算します。</div>
           </div>
         </section>
@@ -857,6 +960,56 @@
       .map((x) => Number.parseInt(x.trim(), 10))
       .filter((n, i, arr) => Number.isInteger(n) && n >= 0 && n < maxExclusive && arr.indexOf(n) === i);
 
+    const SEED_AVERAGE_SD_KEYS = [
+      "avgWaitMin", "p95WaitMin", "maxWaitMin", "recentAvgWaitMin", "recentP95WaitMin",
+      "bunchScore", "bunchDurationMin", "avgDelayMin", "maxDelayMin",
+      "totalBlockedDelayMin", "blockEvents", "maxBlockedDelayMin",
+      "skippedPassengers", "skipAvgExtraMin", "skipMaxExtraMin",
+      "multiSkippedPassengers", "deniedAfterSkip", "fullPassEvents"
+    ];
+
+    const averageMetrics = (metricsList) => {
+      const out = {};
+      const keys = new Set(metricsList.flatMap((m) => Object.keys(m)));
+      for (const key of keys) {
+        const values = metricsList.map((m) => m[key]).filter((v) => v != null);
+        if (!values.length) continue;
+        if (values.every((v) => typeof v === "number" && Number.isFinite(v))) {
+          out[key] = mean(values);
+        } else if (values.every((v) => Array.isArray(v))) {
+          const len = Math.max(...values.map((v) => v.length));
+          out[key] = Array.from({ length: len }, (_, i) => {
+            const nums = values.map((v) => v[i]).filter((n) => Number.isFinite(n));
+            return nums.length ? mean(nums) : 0;
+          });
+        }
+      }
+      return out;
+    };
+
+    const sdMetrics = (metricsList) => {
+      const out = {};
+      for (const key of SEED_AVERAGE_SD_KEYS) {
+        const nums = metricsList.map((m) => m[key]).filter((v) => Number.isFinite(v));
+        out[key] = nums.length ? std(nums) : 0;
+      }
+      return out;
+    };
+
+    const averageHistories = (histories) => {
+      if (!histories.length) return [];
+      const length = Math.max(...histories.map((h) => h.length));
+      const keys = new Set(histories.flatMap((h) => h.flatMap((row) => Object.keys(row))));
+      return Array.from({ length }, (_, i) => {
+        const row = {};
+        for (const key of keys) {
+          const nums = histories.map((h) => h[i]?.[key]).filter((v) => Number.isFinite(v));
+          if (nums.length) row[key] = key === "t" ? nums[0] : mean(nums);
+        }
+        return row;
+      }).filter((row) => Number.isFinite(row.t));
+    };
+
     const PARAM_HELP = {
       presetSelect: "典型的な運行条件をまとめて切り替えます。選択すると即時にシミュレーションをリセットします。",
       seedInput: "乗客発生と走行遅れを再現するための乱数シードです。同じ値なら同じ条件で比較できます。",
@@ -884,7 +1037,8 @@
       protectHotspotInput: "有効にすると、重要・集中停留所では降車専用スキップを発動しません。無効なら重要停留所でも条件次第でスキップ対象になります。",
       hotspotMultiplierInput: "重要・集中停留所の乗客発生率と目的地選択の重みを強める倍率です。",
       followerLoadInput: "後続バスの混雑率がこの値を超える場合、乗客を任せるのは危険としてスキップを禁止します。",
-      initialDelayInput: "最初の先行バスに与える初期遅延です。0なら団子化のきっかけは運行中のランダム要因に任せます。"
+      initialDelayInput: "最初の先行バスに与える初期遅延です。0なら団子化のきっかけは運行中のランダム要因に任せます。",
+      seedAverageCountInput: "シード平均で実行する乱数シードの数です。現在のランダムシードを起点に、101ずつ増やした条件を平均します。"
     };
 
     function applyParameterHelp() {
@@ -931,8 +1085,8 @@
     const PRESETS = {
       urban: {
         name: "高頻度都市路線",
-        seed: 420550, stopCount: 20, busCount: 5, durationMin: 120, demandMultiplier: 0.7,
-        capacity: 30, baseSpeedKmh: 15, stopDistanceKm: 0.3, boardTimeSec: 3,
+        seed: 200411, stopCount: 20, busCount: 5, durationMin: 120, demandMultiplier: 0.8,
+        capacity: 36, baseSpeedKmh: 15, stopDistanceKm: 0.3, boardTimeSec: 3,
         alightTimeSec: 3, randomDelayMeanSec: 28, hotspotStops: [0, 7, 14], hotspotMultiplier: 3,
         protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.8,
         timeThresholdMin: 3, delayThresholdMin: 5, followerLoadLimit: 0.9, policyMode: "distance",
@@ -1723,6 +1877,8 @@
         this.demandEvents = [];
         this.plain = null;
         this.control = null;
+        this.activeResultView = "animation";
+        this.seedAverageResult = null;
         this.running = false;
         this.speed = Number($("speedRange").value);
         this.lastFrame = 0;
@@ -1775,9 +1931,35 @@
         $("exportConfigBtn").addEventListener("click", () => this.exportConfig());
         $("importConfigBtn").addEventListener("click", () => $("configFileInput").click());
         $("configFileInput").addEventListener("change", (event) => this.importConfigFile(event));
-        $("multiSeedBtn").addEventListener("click", () => this.runMultiSeed());
+        $("animationTab").addEventListener("click", () => this.setResultView("animation"));
+        $("seedAverageTab").addEventListener("click", () => this.setResultView("seedAverage"));
+        $("multiSeedBtn").addEventListener("click", () => this.runSeedAverage());
         $("sweepBtn").addEventListener("click", () => this.runSweep());
         applyParameterHelp();
+      }
+
+      setResultView(view) {
+        if (view === "seedAverage" && !this.seedAverageResult) return;
+        this.activeResultView = view;
+        $("animationTab").classList.toggle("active", view === "animation");
+        $("animationTab").setAttribute("aria-selected", view === "animation" ? "true" : "false");
+        $("seedAverageTab").classList.toggle("active", view === "seedAverage");
+        $("seedAverageTab").setAttribute("aria-selected", view === "seedAverage" ? "true" : "false");
+        this.render();
+      }
+
+      clearSeedAverageResult() {
+        this.seedAverageResult = null;
+        this.activeResultView = "animation";
+        $("animationTab").classList.add("active");
+        $("animationTab").setAttribute("aria-selected", "true");
+        $("seedAverageTab").disabled = true;
+        $("seedAverageTab").classList.remove("active");
+        $("seedAverageTab").setAttribute("aria-selected", "false");
+        $("seedAverageStatus").textContent = "未実行";
+        $("seedAverageStatus").className = "experiment-status";
+        $("seedAverageSeeds").textContent = "";
+        $("experimentOutput").textContent = "アニメーションとは別に高速計算します。";
       }
 
       setSettingsDirty(dirty) {
@@ -1788,6 +1970,7 @@
       }
 
       reset() {
+        this.clearSeedAverageResult();
         this.running = false;
         $("playBtn").textContent = "再生";
         this.demandEvents = EventGenerator.demandEvents(this.config);
@@ -1834,14 +2017,33 @@
         $("seedBadge").textContent = `seed ${this.config.seed}`;
         $("plainBunchBadge").textContent = `団子度 ${Math.round(plainM.bunchScore)}`;
         $("controlBunchBadge").textContent = `団子度 ${Math.round(controlM.bunchScore)}`;
-        this.renderSummary(plainM, controlM);
+        $("routePanel").hidden = this.activeResultView !== "animation";
+        $("seedAverageInfoPanel").hidden = this.activeResultView !== "seedAverage";
+        if (this.activeResultView === "seedAverage" && this.seedAverageResult) {
+          $("seedAverageCountBadge").textContent = `${this.seedAverageResult.seeds.length} seeds`;
+          $("seedAverageUsedSeeds").textContent = `使用シード: ${this.seedAverageResult.seeds.join(", ")}`;
+          this.renderResultData(this.seedAverageResult);
+          return;
+        }
         this.renderRoute($("plainRoute"), this.plain, plainM, false);
         this.renderRoute($("controlRoute"), this.control, controlM, true);
         $("plainMini").innerHTML = this.miniHtml(plainM);
         $("controlMini").innerHTML = this.miniHtml(controlM);
-        this.renderCharts();
-        this.renderComments(plainM, controlM);
-        this.renderDetails(plainM, controlM);
+        this.renderResultData({
+          plainMetrics: plainM,
+          controlMetrics: controlM,
+          plainHistory: this.plain.history,
+          controlHistory: this.control.history,
+          stopCount: this.config.stopCount,
+          durationMin: this.config.durationMin
+        });
+      }
+
+      renderResultData(data) {
+        this.renderSummary(data.plainMetrics, data.controlMetrics);
+        this.renderCharts(data);
+        this.renderComments(data.plainMetrics, data.controlMetrics);
+        this.renderDetails(data.plainMetrics, data.controlMetrics, data.plainSd, data.controlSd, data.stopCount);
       }
 
       renderSummary(p, c) {
@@ -1851,12 +2053,13 @@
         const blockedImprove = p.totalBlockedDelayMin > 0 ? (p.totalBlockedDelayMin - c.totalBlockedDelayMin) / p.totalBlockedDelayMin * 100 : 0;
         const cautious = c.skipMaxExtraMin > 6 || c.multiSkippedPassengers > 0 || c.deniedAfterSkip > 0;
         const score = clamp(50 + waitImprove * 0.7 + bunchImprove * 0.5 + delayImprove * 0.35 + blockedImprove * 0.25 - c.skipAvgExtraMin * 5 - c.deniedAfterSkip * 0.7, 0, 100);
+        const affectedPassengers = Number.isInteger(c.skippedPassengers) ? c.skippedPassengers : fmt(c.skippedPassengers, 1);
         $("summary").innerHTML = [
           this.metric("待ち時間改善", `${fmt(waitImprove, 0)}%`, `平均 ${fmt(p.avgWaitMin)} → ${fmt(c.avgWaitMin)} 分`, waitImprove > 5 ? "good" : waitImprove < -3 ? "bad" : "warn"),
           this.metric("団子削減", `${fmt(bunchImprove, 0)}%`, `団子度 ${fmt(p.bunchScore,0)} → ${fmt(c.bunchScore,0)}`, bunchImprove > 8 ? "good" : bunchImprove < -5 ? "bad" : "warn"),
           this.metric("遅延削減", `${fmt(delayImprove, 0)}%`, `平均遅延 ${fmt(p.avgDelayMin)} → ${fmt(c.avgDelayMin)} 分`, delayImprove > 5 ? "good" : delayImprove < -3 ? "bad" : "warn"),
           this.metric("前車待ち削減", `${fmt(blockedImprove, 0)}%`, `総 ${fmt(p.totalBlockedDelayMin)} → ${fmt(c.totalBlockedDelayMin)} 分`, blockedImprove > 8 ? "good" : blockedImprove < -5 ? "bad" : "warn"),
-          this.metric("不利益人数", `${c.skippedPassengers}`, `平均追加 ${fmt(c.skipAvgExtraMin)} 分 / 最大 ${fmt(c.skipMaxExtraMin)} 分`, c.skipMaxExtraMin > 6 ? "bad" : c.skippedPassengers > 0 ? "warn" : "good"),
+          this.metric("不利益人数", `${affectedPassengers}`, `平均追加 ${fmt(c.skipAvgExtraMin)} 分 / 最大 ${fmt(c.skipMaxExtraMin)} 分`, c.skipMaxExtraMin > 6 ? "bad" : c.skippedPassengers > 0 ? "warn" : "good"),
           this.metric("おすすめ度", `${fmt(score, 0)}`, cautious ? "慎重運用フラグあり" : "副作用は限定的", score >= 65 && !cautious ? "good" : score < 45 ? "bad" : "warn")
         ].join("");
       }
@@ -1961,55 +2164,62 @@
         svg.innerHTML = html;
       }
 
-      renderCharts() {
+      renderCharts(data) {
+        const plainHistory = data.plainHistory || [];
+        const controlHistory = data.controlHistory || [];
+        const durationMin = data.durationMin || this.config.durationMin;
         this.drawLineChart($("bunchChart"), [
-          { name: "制御なし", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.bunchScore]) },
-          { name: "制御あり", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.bunchScore]) }
-        ], 100);
+          { name: "制御なし", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.bunchScore]) },
+          { name: "制御あり", color: "#25865f", data: controlHistory.map((h) => [h.t/60, h.bunchScore]) }
+        ], 100, durationMin);
         this.drawLineChart($("waitChart"), [
-          { name: "なし平均", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.avgWaitMin]) },
-          { name: "あり平均", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.avgWaitMin]) },
-          { name: "なし95%", color: "#a12d2d", data: this.plain.history.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
-          { name: "あり95%", color: "#166f4b", data: this.control.history.map((h) => [h.t/60, h.p95WaitMin]), dash: true }
-        ]);
+          { name: "なし平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.avgWaitMin]) },
+          { name: "あり平均", color: "#25865f", data: controlHistory.map((h) => [h.t/60, h.avgWaitMin]) },
+          { name: "なし95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
+          { name: "あり95%", color: "#166f4b", data: controlHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true }
+        ], null, durationMin);
         this.drawLineChart($("recentWaitChart"), [
-          { name: "なし直近平均", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.recentAvgWaitMin]) },
-          { name: "あり直近平均", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.recentAvgWaitMin]) },
-          { name: "なし直近95%", color: "#a12d2d", data: this.plain.history.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
-          { name: "あり直近95%", color: "#166f4b", data: this.control.history.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true }
-        ]);
+          { name: "なし直近平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
+          { name: "あり直近平均", color: "#25865f", data: controlHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
+          { name: "なし直近95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
+          { name: "あり直近95%", color: "#166f4b", data: controlHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true }
+        ], null, durationMin);
         this.drawLineChart($("headwayChart"), [
-          { name: "制御なし", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.minHeadwayStops]) },
-          { name: "制御あり", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.minHeadwayStops]) }
-        ]);
+          { name: "制御なし", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.minHeadwayStops]) },
+          { name: "制御あり", color: "#25865f", data: controlHistory.map((h) => [h.t/60, h.minHeadwayStops]) }
+        ], null, durationMin);
         this.drawLineChart($("harmChart"), [
-          { name: "平均追加", color: "#7357c8", data: this.control.history.map((h) => [h.t/60, h.skipAvgExtraMin]) },
-          { name: "最大追加", color: "#b47b13", data: this.control.history.map((h) => [h.t/60, h.skipMaxExtraMin]) }
-        ]);
+          { name: "平均追加", color: "#7357c8", data: controlHistory.map((h) => [h.t/60, h.skipAvgExtraMin]) },
+          { name: "最大追加", color: "#b47b13", data: controlHistory.map((h) => [h.t/60, h.skipMaxExtraMin]) }
+        ], null, durationMin);
         this.drawLineChart($("blockedChart"), [
-          { name: "制御なし", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.totalBlockedDelayMin || 0]) },
-          { name: "制御あり", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.totalBlockedDelayMin || 0]) }
-        ]);
+          { name: "制御なし", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.totalBlockedDelayMin || 0]) },
+          { name: "制御あり", color: "#25865f", data: controlHistory.map((h) => [h.t/60, h.totalBlockedDelayMin || 0]) }
+        ], null, durationMin);
         this.drawLineChart($("bunchBlockedChart"), [
-          { name: "制御なし", color: "#c83f3f", data: this.plain.history.map((h) => [h.t/60, h.blockedDuringBunchMin || 0]) },
-          { name: "制御あり", color: "#25865f", data: this.control.history.map((h) => [h.t/60, h.blockedDuringBunchMin || 0]) }
-        ]);
-        this.drawBarChart($("stopBlockChart"), this.stopRankingRows("blocked"));
-        this.drawBarChart($("occupancyChart"), this.stopRankingRows("occupancy"), 100);
+          { name: "制御なし", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.blockedDuringBunchMin || 0]) },
+          { name: "制御あり", color: "#25865f", data: controlHistory.map((h) => [h.t/60, h.blockedDuringBunchMin || 0]) }
+        ], null, durationMin);
+        this.drawBarChart($("stopBlockChart"), this.stopRankingRowsFromMetrics(data.plainMetrics, data.controlMetrics, data.stopCount, "blocked"));
+        this.drawBarChart($("occupancyChart"), this.stopRankingRowsFromMetrics(data.plainMetrics, data.controlMetrics, data.stopCount, "occupancy"), 100);
       }
 
       stopRankingRows(type) {
         const p = this.plain.computeMetrics();
         const c = this.control.computeMetrics();
-        const values = Array.from({ length: this.config.stopCount }, (_, stop) => {
-          const plain = type === "occupancy" ? p.stopOccupancyRates[stop] * 100 : p.stopBlockedDelayMins[stop];
-          const control = type === "occupancy" ? c.stopOccupancyRates[stop] * 100 : c.stopBlockedDelayMins[stop];
+        return this.stopRankingRowsFromMetrics(p, c, this.config.stopCount, type);
+      }
+
+      stopRankingRowsFromMetrics(p, c, stopCount, type) {
+        const values = Array.from({ length: stopCount }, (_, stop) => {
+          const plain = type === "occupancy" ? (p.stopOccupancyRates?.[stop] || 0) * 100 : (p.stopBlockedDelayMins?.[stop] || 0);
+          const control = type === "occupancy" ? (c.stopOccupancyRates?.[stop] || 0) * 100 : (c.stopBlockedDelayMins?.[stop] || 0);
           return { label: `停${stop}`, plain, control, total: plain + control };
         });
         return values.sort((a, b) => b.total - a.total).slice(0, 8);
       }
 
-      drawLineChart(canvas, series, fixedMax = null) {
+      drawLineChart(canvas, series, fixedMax = null, durationMin = this.config.durationMin) {
         const ctx = canvas.getContext("2d");
         const w = canvas.width;
         const h = canvas.height;
@@ -2018,7 +2228,7 @@
         ctx.fillRect(0, 0, w, h);
         const pad = { l: 34, r: 12, t: 10, b: 24 };
         const all = series.flatMap((s) => s.data).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
-        const maxX = Math.max(1, this.config.durationMin, ...all.map((p) => p[0]));
+        const maxX = Math.max(1, durationMin, ...all.map((p) => p[0]));
         const maxY = fixedMax ?? Math.max(1, ...all.map((p) => p[1])) * 1.12;
         ctx.strokeStyle = "#e2ddd3";
         ctx.lineWidth = 1;
@@ -2112,7 +2322,7 @@
         $("comments").innerHTML = lines.map(([cls, text]) => `<div class="line ${cls}">${text}</div>`).join("");
       }
 
-      renderDetails(p, c) {
+      renderDetails(p, c, plainSd = null, controlSd = null, stopCount = this.config.stopCount) {
         const rows = [
           ["平均待ち時間 分", p.avgWaitMin, c.avgWaitMin],
           ["直近5分 平均待ち 分", p.recentAvgWaitMin, c.recentAvgWaitMin],
@@ -2149,35 +2359,102 @@
           ["満員通過回数", p.fullPassEvents, c.fullPassEvents],
           ["後続満員影響 人", p.deniedAfterSkip, c.deniedAfterSkip]
         ];
-        const stopRows = Array.from({ length: this.config.stopCount }, (_, stop) => ({
+        const hasSd = !!plainSd && !!controlSd;
+        const valueCell = (v) => fmt(v, Number.isInteger(v) ? 0 : 2);
+        const sdCell = (sd, key) => key && Number.isFinite(sd?.[key]) ? fmt(sd[key], 2) : "-";
+        const stopRows = Array.from({ length: stopCount }, (_, stop) => ({
           stop,
-          plainBlocked: p.stopBlockedDelayMins[stop],
-          controlBlocked: c.stopBlockedDelayMins[stop],
-          plainEvents: p.stopBlockEvents[stop],
-          controlEvents: c.stopBlockEvents[stop],
-          plainOcc: p.stopOccupancyRates[stop] * 100,
-          controlOcc: c.stopOccupancyRates[stop] * 100,
-          plainQueue: p.stopMaxQueues[stop],
-          controlQueue: c.stopMaxQueues[stop]
+          plainBlocked: p.stopBlockedDelayMins?.[stop] || 0,
+          controlBlocked: c.stopBlockedDelayMins?.[stop] || 0,
+          plainEvents: p.stopBlockEvents?.[stop] || 0,
+          controlEvents: c.stopBlockEvents?.[stop] || 0,
+          plainOcc: (p.stopOccupancyRates?.[stop] || 0) * 100,
+          controlOcc: (c.stopOccupancyRates?.[stop] || 0) * 100,
+          plainQueue: p.stopMaxQueues?.[stop] || 0,
+          controlQueue: c.stopMaxQueues?.[stop] || 0
         })).sort((a, b) => (b.plainBlocked + b.controlBlocked) - (a.plainBlocked + a.controlBlocked)).slice(0, 8);
-        $("detailsTable").innerHTML = `<table><thead><tr><th>指標</th><th>制御なし</th><th>制御あり</th></tr></thead><tbody>${
-          rows.map(([k, a, b]) => `<tr><td>${k}</td><td>${fmt(a, Number.isInteger(a) ? 0 : 2)}</td><td>${fmt(b, Number.isInteger(b) ? 0 : 2)}</td></tr>`).join("")
+        const sdKeyByLabel = new Map([
+          ["平均待ち時間 分", "avgWaitMin"],
+          ["直近5分 平均待ち 分", "recentAvgWaitMin"],
+          ["直近5分 95%待ち 分", "recentP95WaitMin"],
+          ["95%待ち時間 分", "p95WaitMin"],
+          ["最大待ち時間 分", "maxWaitMin"],
+          ["団子継続時間 分", "bunchDurationMin"],
+          ["平均遅延 分", "avgDelayMin"],
+          ["最大遅延 分", "maxDelayMin"],
+          ["総前車待ち遅延 分", "totalBlockedDelayMin"],
+          ["前車待ち発生回数", "blockEvents"],
+          ["最大前車待ち 分", "maxBlockedDelayMin"],
+          ["スキップ人数", "skippedPassengers"],
+          ["追加待ち平均 分", "skipAvgExtraMin"],
+          ["追加待ち最大 分", "skipMaxExtraMin"],
+          ["複数回スキップ 人", "multiSkippedPassengers"],
+          ["満員通過回数", "fullPassEvents"],
+          ["後続満員影響 人", "deniedAfterSkip"]
+        ]);
+        const header = hasSd
+          ? "<tr><th>指標</th><th>制御なし 平均</th><th>制御あり 平均</th><th>制御なし SD</th><th>制御あり SD</th></tr>"
+          : "<tr><th>指標</th><th>制御なし</th><th>制御あり</th></tr>";
+        $("detailsTable").innerHTML = `<table><thead>${header}</thead><tbody>${
+          rows.map(([k, a, b]) => {
+            const key = sdKeyByLabel.get(k);
+            return hasSd
+              ? `<tr><td>${k}</td><td>${valueCell(a)}</td><td>${valueCell(b)}</td><td>${sdCell(plainSd, key)}</td><td>${sdCell(controlSd, key)}</td></tr>`
+              : `<tr><td>${k}</td><td>${valueCell(a)}</td><td>${valueCell(b)}</td></tr>`;
+          }).join("")
         }</tbody></table><table style="margin-top:10px;"><thead><tr><th>停留所</th><th>前車待ち分</th><th>回数</th><th>占有率</th><th>最大列</th></tr></thead><tbody>${
-          stopRows.map((r) => `<tr><td>停${r.stop}</td><td>${fmt(r.plainBlocked)} / ${fmt(r.controlBlocked)}</td><td>${r.plainEvents} / ${r.controlEvents}</td><td>${fmt(r.plainOcc)}% / ${fmt(r.controlOcc)}%</td><td>${r.plainQueue} / ${r.controlQueue}</td></tr>`).join("")
+          stopRows.map((r) => `<tr><td>停${r.stop}</td><td>${fmt(r.plainBlocked)} / ${fmt(r.controlBlocked)}</td><td>${fmt(r.plainEvents, 1)} / ${fmt(r.controlEvents, 1)}</td><td>${fmt(r.plainOcc)}% / ${fmt(r.controlOcc)}%</td><td>${fmt(r.plainQueue, 1)} / ${fmt(r.controlQueue, 1)}</td></tr>`).join("")
         }</tbody></table>`;
       }
 
-      runMultiSeed() {
+      async runSeedAverage() {
+        const countInput = $("seedAverageCountInput");
+        const count = clamp(Number.parseInt(countInput.value, 10) || 5, 1, 100);
+        countInput.value = count;
         const base = buildConfigFromInputs();
-        const seeds = [base.seed, base.seed + 101, base.seed + 202, base.seed + 303, base.seed + 404];
-        const results = seeds.map((seed) => this.runFast({ ...base, seed }));
-        const avgPlainWait = mean(results.map((r) => r.plain.avgWaitMin));
-        const avgControlWait = mean(results.map((r) => r.control.avgWaitMin));
-        const avgPlainBunch = mean(results.map((r) => r.plain.bunchScore));
-        const avgControlBunch = mean(results.map((r) => r.control.bunchScore));
-        const avgPlainBlocked = mean(results.map((r) => r.plain.totalBlockedDelayMin));
-        const avgControlBlocked = mean(results.map((r) => r.control.totalBlockedDelayMin));
-        $("experimentOutput").innerHTML = `5シード平均: 待ち時間 ${fmt(avgPlainWait)}→${fmt(avgControlWait)}分、団子度 ${fmt(avgPlainBunch,0)}→${fmt(avgControlBunch,0)}、前車待ち ${fmt(avgPlainBlocked)}→${fmt(avgControlBlocked)}分。シード: ${seeds.join(", ")}`;
+        const seeds = Array.from({ length: count }, (_, i) => base.seed + 101 * i);
+        const status = $("seedAverageStatus");
+        status.textContent = "実行中";
+        status.className = "experiment-status running";
+        $("seedAverageSeeds").textContent = `使用予定シード: ${seeds.join(", ")}`;
+        $("experimentOutput").textContent = "シード平均を高速計算しています。";
+        $("multiSeedBtn").disabled = true;
+        try {
+          const results = [];
+          for (let i = 0; i < seeds.length; i++) {
+            results.push(this.runFastDetailed({ ...base, seed: seeds[i] }));
+            status.textContent = `実行中 ${i + 1} / ${seeds.length}`;
+            if ((i + 1) % 3 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+          const plainMetricsList = results.map((r) => r.plain.metrics);
+          const controlMetricsList = results.map((r) => r.control.metrics);
+          this.seedAverageResult = {
+            seeds,
+            plainMetrics: averageMetrics(plainMetricsList),
+            controlMetrics: averageMetrics(controlMetricsList),
+            plainSd: sdMetrics(plainMetricsList),
+            controlSd: sdMetrics(controlMetricsList),
+            plainHistory: averageHistories(results.map((r) => r.plain.history)),
+            controlHistory: averageHistories(results.map((r) => r.control.history)),
+            stopCount: base.stopCount,
+            durationMin: base.durationMin
+          };
+          $("seedAverageTab").disabled = false;
+          status.textContent = "完了";
+          status.className = "experiment-status done";
+          $("seedAverageSeeds").textContent = `使用シード: ${seeds.join(", ")}`;
+          const p = this.seedAverageResult.plainMetrics;
+          const c = this.seedAverageResult.controlMetrics;
+          $("experimentOutput").innerHTML = `シード平均: 待ち時間 ${fmt(p.avgWaitMin)}→${fmt(c.avgWaitMin)}分、団子度 ${fmt(p.bunchScore,0)}→${fmt(c.bunchScore,0)}、前車待ち ${fmt(p.totalBlockedDelayMin)}→${fmt(c.totalBlockedDelayMin)}分。`;
+          this.setResultView("seedAverage");
+        } catch (error) {
+          console.error(error);
+          status.textContent = "エラー";
+          status.className = "experiment-status error";
+          $("experimentOutput").textContent = `シード平均の計算に失敗しました: ${error.message || error}`;
+        } finally {
+          $("multiSeedBtn").disabled = false;
+        }
       }
 
       runSweep() {
@@ -2192,11 +2469,21 @@
       }
 
       runFast(rawConfig) {
+        const result = this.runFastDetailed(rawConfig);
+        return { plain: result.plain.metrics, control: result.control.metrics };
+      }
+
+      runFastDetailed(rawConfig) {
         const config = normalizeConfig(rawConfig);
         const events = EventGenerator.demandEvents(config);
         const plain = new Simulation({ ...config, controlEnabled: false }, "plain", events);
         const control = new Simulation({ ...config, controlEnabled: true }, "control", events);
-        return { plain: plain.runToEnd(), control: control.runToEnd() };
+        plain.runToEnd();
+        control.runToEnd();
+        return {
+          plain: { metrics: plain.computeMetrics(), history: plain.history.map((h) => ({ ...h })) },
+          control: { metrics: control.computeMetrics(), history: control.history.map((h) => ({ ...h })) }
+        };
       }
 
       exportJson() {
