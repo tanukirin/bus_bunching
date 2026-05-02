@@ -223,11 +223,6 @@
       color: #fff;
     }
 
-    .tab-button:disabled {
-      opacity: 0.48;
-      cursor: not-allowed;
-    }
-
     .view-note {
       border: 1px dashed var(--line);
       border-radius: 8px;
@@ -235,6 +230,64 @@
       color: var(--muted);
       padding: 18px;
       line-height: 1.55;
+    }
+
+    .seed-average-layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.3fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .seed-average-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .seed-average-card h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .seed-average-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .seed-average-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .seed-average-status-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .seed-preview {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #f6f4ee;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .empty-result {
+      color: var(--muted);
+      text-align: center;
+      padding: 24px 12px;
+      line-height: 1.6;
     }
 
     .metric {
@@ -566,6 +619,7 @@
       .grid,
       .compare,
       .charts,
+      .seed-average-layout,
       .education {
         grid-template-columns: 1fr;
       }
@@ -598,6 +652,7 @@
 
       .summary-grid,
       .form-grid,
+      .seed-average-fields,
       .mini-stats {
         grid-template-columns: 1fr;
       }
@@ -631,7 +686,7 @@
 
     <div class="result-tabs" role="tablist" aria-label="結果表示">
       <button id="animationTab" class="tab-button active" type="button" role="tab" aria-selected="true">アニメーション結果</button>
-      <button id="seedAverageTab" class="tab-button" type="button" role="tab" aria-selected="false" disabled>シード平均</button>
+      <button id="seedAverageTab" class="tab-button" type="button" role="tab" aria-selected="false">シード平均</button>
     </div>
 
     <div id="summary" class="summary-grid"></div>
@@ -670,14 +725,42 @@
 
         <section class="panel" id="seedAverageInfoPanel" hidden>
           <div class="panel-header">
-            <h2>シード平均ビュー</h2>
+            <h2>シード平均</h2>
             <span class="badge blue" id="seedAverageCountBadge">0 seeds</span>
           </div>
           <div class="panel-body">
-            <div class="view-note">
-              複数シードの平均では現在位置アニメーションを定義しにくいため、路線図は表示しません。
-              上部サマリー、主要グラフ、自動コメント、詳細指標、停留所別ランキングで同じ粒度の判断ができます。
-              <div id="seedAverageUsedSeeds" class="seed-list"></div>
+            <div class="seed-average-layout">
+              <div class="seed-average-card">
+                <h3>実験条件</h3>
+                <div class="seed-average-fields">
+                  <div class="field">
+                    <label for="seedAverageBaseSeedInput">基準シード</label>
+                    <input id="seedAverageBaseSeedInput" type="number" min="1" value="420550">
+                  </div>
+                  <div class="field">
+                    <label for="seedAverageCountInput">平均シード数</label>
+                    <input id="seedAverageCountInput" type="number" min="1" max="100" value="5">
+                  </div>
+                </div>
+                <div class="seed-average-actions">
+                  <button id="seedAverageRunBtn" class="primary">シード平均を実行</button>
+                  <button id="seedAverageRandomBtn" title="シード平均の基準シードだけをランダムに変更します">新しいシード</button>
+                  <button id="seedAverageSyncBtn">現在の設定から更新</button>
+                </div>
+                <div class="seed-average-status-row">
+                  <span id="seedAverageStatus" class="experiment-status">未実行</span>
+                  <span class="badge" id="seedAverageModeBadge">未計算</span>
+                </div>
+                <div id="seedAverageSeeds" class="seed-preview"></div>
+              </div>
+              <div class="seed-average-card">
+                <h3>読み方</h3>
+                <div class="view-note">
+                  複数シードの平均では現在位置アニメーションを定義しにくいため、路線図は表示しません。
+                  上部サマリー、主要グラフ、自動コメント、詳細指標、停留所別ランキングで同じ粒度の判断ができます。
+                  <div id="seedAverageUsedSeeds" class="seed-list"></div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -915,15 +998,9 @@
           <div class="panel-header"><h2>軽量実験</h2></div>
           <div class="panel-body">
             <div class="experiment-row">
-              <div class="field">
-                <label for="seedAverageCountInput">平均シード数</label>
-                <input id="seedAverageCountInput" type="number" min="1" max="100" value="5">
-              </div>
-              <button id="multiSeedBtn">シード平均を実行</button>
+              <button id="multiSeedBtn">シード平均タブを開く</button>
               <button id="sweepBtn">しきい値スイープ</button>
             </div>
-            <div id="seedAverageStatus" class="experiment-status">未実行</div>
-            <div id="seedAverageSeeds" class="seed-list"></div>
             <div id="experimentOutput" class="experiment-output">アニメーションとは別に高速計算します。</div>
           </div>
         </section>
@@ -1038,7 +1115,8 @@
       hotspotMultiplierInput: "重要・集中停留所の乗客発生率と目的地選択の重みを強める倍率です。",
       followerLoadInput: "後続バスの混雑率がこの値を超える場合、乗客を任せるのは危険としてスキップを禁止します。",
       initialDelayInput: "最初の先行バスに与える初期遅延です。0なら団子化のきっかけは運行中のランダム要因に任せます。",
-      seedAverageCountInput: "シード平均で実行する乱数シードの数です。現在のランダムシードを起点に、101ずつ増やした条件を平均します。"
+      seedAverageBaseSeedInput: "シード平均の起点にする乱数シードです。現在の設定のランダムシードと同じ値にできます。",
+      seedAverageCountInput: "シード平均で実行する乱数シードの数です。基準シードを起点に、101ずつ増やした条件を平均します。"
     };
 
     function applyParameterHelp() {
@@ -1933,14 +2011,30 @@
         $("configFileInput").addEventListener("change", (event) => this.importConfigFile(event));
         $("animationTab").addEventListener("click", () => this.setResultView("animation"));
         $("seedAverageTab").addEventListener("click", () => this.setResultView("seedAverage"));
-        $("multiSeedBtn").addEventListener("click", () => this.runSeedAverage());
+        $("multiSeedBtn").addEventListener("click", () => this.setResultView("seedAverage"));
+        $("seedAverageRunBtn").addEventListener("click", () => this.runSeedAverage());
+        $("seedAverageRandomBtn").addEventListener("click", () => {
+          $("seedAverageBaseSeedInput").value = Math.floor(Math.random() * 999999) + 1;
+          this.onSeedAverageParamInput();
+        });
+        $("seedAverageSyncBtn").addEventListener("click", () => {
+          this.syncSeedAverageControls(true);
+          this.renderSeedAveragePreview();
+        });
+        $("seedAverageBaseSeedInput").addEventListener("input", () => this.onSeedAverageParamInput());
+        $("seedAverageCountInput").addEventListener("input", () => this.onSeedAverageParamInput());
         $("sweepBtn").addEventListener("click", () => this.runSweep());
         applyParameterHelp();
+        this.syncSeedAverageControls(true);
+        this.renderSeedAveragePreview();
       }
 
       setResultView(view) {
-        if (view === "seedAverage" && !this.seedAverageResult) return;
         this.activeResultView = view;
+        if (view === "seedAverage") {
+          this.syncSeedAverageControls(false);
+          this.renderSeedAveragePreview();
+        }
         $("animationTab").classList.toggle("active", view === "animation");
         $("animationTab").setAttribute("aria-selected", view === "animation" ? "true" : "false");
         $("seedAverageTab").classList.toggle("active", view === "seedAverage");
@@ -1953,13 +2047,56 @@
         this.activeResultView = "animation";
         $("animationTab").classList.add("active");
         $("animationTab").setAttribute("aria-selected", "true");
-        $("seedAverageTab").disabled = true;
         $("seedAverageTab").classList.remove("active");
         $("seedAverageTab").setAttribute("aria-selected", "false");
         $("seedAverageStatus").textContent = "未実行";
         $("seedAverageStatus").className = "experiment-status";
-        $("seedAverageSeeds").textContent = "";
+        $("seedAverageModeBadge").textContent = "未計算";
+        $("seedAverageModeBadge").className = "badge";
+        this.syncSeedAverageControls(true);
+        this.renderSeedAveragePreview();
         $("experimentOutput").textContent = "アニメーションとは別に高速計算します。";
+      }
+
+      syncSeedAverageControls(force = false) {
+        const baseInput = $("seedAverageBaseSeedInput");
+        if (!baseInput) return;
+        if (force || document.activeElement !== baseInput) {
+          baseInput.value = Number($("seedInput").value) || this.config.seed;
+        }
+      }
+
+      seedAverageSeeds() {
+        const baseSeed = Math.max(1, Number.parseInt($("seedAverageBaseSeedInput").value, 10) || this.config.seed || 1);
+        const count = clamp(Number.parseInt($("seedAverageCountInput").value, 10) || 5, 1, 100);
+        return {
+          baseSeed,
+          count,
+          seeds: Array.from({ length: count }, (_, i) => baseSeed + 101 * i)
+        };
+      }
+
+      renderSeedAveragePreview() {
+        const { baseSeed, count, seeds } = this.seedAverageSeeds();
+        $("seedAverageBaseSeedInput").value = baseSeed;
+        $("seedAverageCountInput").value = count;
+        $("seedAverageCountBadge").textContent = `${count} seeds`;
+        const shown = seeds.slice(0, 12).join(", ");
+        const suffix = seeds.length > 12 ? ` ... +${seeds.length - 12}` : "";
+        $("seedAverageSeeds").textContent = `使用予定シード: ${shown}${suffix}`;
+        $("seedAverageUsedSeeds").textContent = this.seedAverageResult
+          ? `直近の計算シード: ${this.seedAverageResult.seeds.join(", ")}`
+          : "まだシード平均は実行されていません。条件を確認して実行してください。";
+      }
+
+      onSeedAverageParamInput() {
+        this.renderSeedAveragePreview();
+        if (this.seedAverageResult) {
+          $("seedAverageStatus").textContent = "条件変更あり";
+          $("seedAverageStatus").className = "experiment-status running";
+          $("seedAverageModeBadge").textContent = "再実行推奨";
+          $("seedAverageModeBadge").className = "badge yellow";
+        }
       }
 
       setSettingsDirty(dirty) {
@@ -2019,10 +2156,15 @@
         $("controlBunchBadge").textContent = `団子度 ${Math.round(controlM.bunchScore)}`;
         $("routePanel").hidden = this.activeResultView !== "animation";
         $("seedAverageInfoPanel").hidden = this.activeResultView !== "seedAverage";
-        if (this.activeResultView === "seedAverage" && this.seedAverageResult) {
-          $("seedAverageCountBadge").textContent = `${this.seedAverageResult.seeds.length} seeds`;
-          $("seedAverageUsedSeeds").textContent = `使用シード: ${this.seedAverageResult.seeds.join(", ")}`;
-          this.renderResultData(this.seedAverageResult);
+        if (this.activeResultView === "seedAverage") {
+          this.renderSeedAveragePreview();
+          if (this.seedAverageResult) {
+            $("seedAverageCountBadge").textContent = `${this.seedAverageResult.seeds.length} seeds`;
+            $("seedAverageUsedSeeds").textContent = `使用シード: ${this.seedAverageResult.seeds.join(", ")}`;
+            this.renderResultData(this.seedAverageResult);
+          } else {
+            this.renderSeedAverageEmpty();
+          }
           return;
         }
         this.renderRoute($("plainRoute"), this.plain, plainM, false);
@@ -2044,6 +2186,24 @@
         this.renderCharts(data);
         this.renderComments(data.plainMetrics, data.controlMetrics);
         this.renderDetails(data.plainMetrics, data.controlMetrics, data.plainSd, data.controlSd, data.stopCount);
+      }
+
+      renderSeedAverageEmpty() {
+        const { baseSeed, count, seeds } = this.seedAverageSeeds();
+        $("summary").innerHTML = [
+          this.metric("表示モード", "シード平均", "複数シードをまとめて評価します", "warn"),
+          this.metric("平均シード数", `${count}`, `基準 ${baseSeed} / 間隔 101`, "warn"),
+          this.metric("使用予定", `${seeds.length}`, `${seeds[0]} → ${seeds[seeds.length - 1]}`, "warn"),
+          this.metric("結果", "未実行", "実行後に平均値とSDを表示します", "warn"),
+          this.metric("アニメーション", "非表示", "平均バス位置は定義しません", "warn"),
+          this.metric("エクスポート", "単一結果", "JSON/CSVはアニメーション結果が対象です", "warn")
+        ].join("");
+        this.clearCharts("シード平均を実行すると表示されます");
+        $("comments").innerHTML = [
+          `<div class="line warn">シード平均は、単一シードの偶然に左右される結果をならすためのビューです。基準シードと件数を決めて実行してください。</div>`,
+          `<div class="line warn">実行後は、通常結果と同じサマリー、グラフ、詳細指標に加えて、主要指標のSDを確認できます。</div>`
+        ].join("");
+        $("detailsTable").innerHTML = `<div class="empty-result">シード平均は未実行です。上の「シード平均を実行」を押すと、ここに平均指標とSDが表示されます。</div>`;
       }
 
       renderSummary(p, c) {
@@ -2271,6 +2431,24 @@
         }
       }
 
+      clearCharts(message) {
+        const ids = ["bunchChart", "waitChart", "recentWaitChart", "headwayChart", "harmChart", "blockedChart", "bunchBlockedChart", "stopBlockChart", "occupancyChart"];
+        for (const id of ids) {
+          const canvas = $(id);
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.strokeStyle = "#e2ddd3";
+          ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
+          ctx.fillStyle = "#67707d";
+          ctx.font = "12px Segoe UI";
+          ctx.textAlign = "center";
+          ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+          ctx.textAlign = "left";
+        }
+      }
+
       drawBarChart(canvas, rows, fixedMax = null) {
         const ctx = canvas.getContext("2d");
         const w = canvas.width;
@@ -2408,17 +2586,18 @@
       }
 
       async runSeedAverage() {
-        const countInput = $("seedAverageCountInput");
-        const count = clamp(Number.parseInt(countInput.value, 10) || 5, 1, 100);
-        countInput.value = count;
-        const base = buildConfigFromInputs();
-        const seeds = Array.from({ length: count }, (_, i) => base.seed + 101 * i);
+        const { baseSeed, count, seeds } = this.seedAverageSeeds();
+        $("seedAverageBaseSeedInput").value = baseSeed;
+        $("seedAverageCountInput").value = count;
+        const base = { ...buildConfigFromInputs(), seed: baseSeed };
         const status = $("seedAverageStatus");
         status.textContent = "実行中";
         status.className = "experiment-status running";
-        $("seedAverageSeeds").textContent = `使用予定シード: ${seeds.join(", ")}`;
+        $("seedAverageModeBadge").textContent = "計算中";
+        $("seedAverageModeBadge").className = "badge yellow";
+        $("seedAverageSeeds").textContent = `使用シード: ${seeds.join(", ")}`;
         $("experimentOutput").textContent = "シード平均を高速計算しています。";
-        $("multiSeedBtn").disabled = true;
+        $("seedAverageRunBtn").disabled = true;
         try {
           const results = [];
           for (let i = 0; i < seeds.length; i++) {
@@ -2439,9 +2618,10 @@
             stopCount: base.stopCount,
             durationMin: base.durationMin
           };
-          $("seedAverageTab").disabled = false;
           status.textContent = "完了";
           status.className = "experiment-status done";
+          $("seedAverageModeBadge").textContent = "平均結果";
+          $("seedAverageModeBadge").className = "badge green";
           $("seedAverageSeeds").textContent = `使用シード: ${seeds.join(", ")}`;
           const p = this.seedAverageResult.plainMetrics;
           const c = this.seedAverageResult.controlMetrics;
@@ -2451,9 +2631,11 @@
           console.error(error);
           status.textContent = "エラー";
           status.className = "experiment-status error";
+          $("seedAverageModeBadge").textContent = "エラー";
+          $("seedAverageModeBadge").className = "badge red";
           $("experimentOutput").textContent = `シード平均の計算に失敗しました: ${error.message || error}`;
         } finally {
-          $("multiSeedBtn").disabled = false;
+          $("seedAverageRunBtn").disabled = false;
         }
       }
 
