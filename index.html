@@ -680,11 +680,11 @@
               </div>
               <div class="field">
                 <label for="seedInput">ランダムシード</label>
-                <input id="seedInput" type="number" min="1" value="2">
+                <input id="seedInput" type="number" min="1" value="671765">
               </div>
               <div class="field">
                 <label for="durationInput">時間 分</label>
-                <input id="durationInput" type="number" min="20" max="240" value="90">
+                <input id="durationInput" type="number" min="20" max="240" value="120">
               </div>
               <div class="field">
                 <label for="stopCountInput">バス停数</label>
@@ -696,7 +696,7 @@
               </div>
               <div class="field">
                 <label for="demandInput">需要倍率</label>
-                <input id="demandInput" type="number" min="0.3" max="3" step="0.1" value="1">
+                <input id="demandInput" type="number" min="0.3" max="3" step="0.1" value="0.7">
               </div>
               <div class="field">
                 <label for="capacityInput">定員</label>
@@ -705,7 +705,7 @@
               <div class="field full">
                 <label for="policySelect">制御方式</label>
                 <select id="policySelect">
-                  <option value="hybrid">距離＋時間のハイブリッド</option>
+                  <option value="hybrid" selected>距離＋時間のハイブリッド</option>
                   <option value="distance">距離基準のみ</option>
                   <option value="time">時間基準のみ</option>
                 </select>
@@ -720,7 +720,7 @@
               </div>
               <div class="field">
                 <label for="delayThresholdInput">先行遅延しきい値 分</label>
-                <input id="delayThresholdInput" type="number" min="0" max="12" step="0.25" value="2">
+                <input id="delayThresholdInput" type="number" min="0" max="12" step="0.25" value="5">
               </div>
             </div>
 
@@ -729,11 +729,11 @@
               <div class="form-grid">
                 <div class="field">
                   <label for="speedInput">基本速度 km/h</label>
-                  <input id="speedInput" type="number" min="8" max="40" step="1" value="18">
+                  <input id="speedInput" type="number" min="8" max="40" step="1" value="15">
                 </div>
                 <div class="field">
                   <label for="distanceInput">停留所間 km</label>
-                  <input id="distanceInput" type="number" min="0.2" max="1.5" step="0.05" value="0.25">
+                  <input id="distanceInput" type="number" min="0.2" max="1.5" step="0.05" value="0.3">
                 </div>
                 <div class="field">
                   <label for="boardTimeInput">乗車 秒/人</label>
@@ -741,11 +741,11 @@
                 </div>
                 <div class="field">
                   <label for="alightTimeInput">降車 秒/人</label>
-                  <input id="alightTimeInput" type="number" min="0.5" max="10" step="0.1" value="2.8">
+                  <input id="alightTimeInput" type="number" min="0.5" max="10" step="0.1" value="3">
                 </div>
                 <div class="field">
                   <label for="crowdedExtraInput">混雑時 固定追加秒</label>
-                  <input id="crowdedExtraInput" type="number" min="0" max="30" step="0.5" value="5">
+                  <input id="crowdedExtraInput" type="number" min="0" max="30" step="0.5" value="4">
                 </div>
                 <div class="field">
                   <label for="stopLossInput">減速・加速ロス 秒/停車</label>
@@ -769,7 +769,7 @@
                 </div>
                 <div class="field">
                   <label for="randomDelayInput">区間平均遅れ 秒</label>
-                  <input id="randomDelayInput" type="number" min="0" max="180" step="0.1" value="7.4">
+                  <input id="randomDelayInput" type="number" min="0" max="180" step="0.1" value="25">
                   <small>各停留所間に平均して加わる信号・交通流の遅れです。</small>
                 </div>
                 <div class="field">
@@ -777,12 +777,19 @@
                   <input id="hotspotInput" type="text" value="0,10">
                 </div>
                 <div class="field">
+                  <label for="protectHotspotInput">重要停留所スキップ禁止</label>
+                  <select id="protectHotspotInput">
+                    <option value="false" selected>無効</option>
+                    <option value="true">有効</option>
+                  </select>
+                </div>
+                <div class="field">
                   <label for="hotspotMultiplierInput">集中倍率</label>
                   <input id="hotspotMultiplierInput" type="number" min="1" max="6" step="0.25" value="3">
                 </div>
                 <div class="field">
                   <label for="followerLoadInput">後続混雑率しきい値</label>
-                  <input id="followerLoadInput" type="number" min="0.3" max="1" step="0.05" value="0.82">
+                  <input id="followerLoadInput" type="number" min="0.3" max="1" step="0.05" value="0.9">
                 </div>
                 <div class="field">
                   <label for="initialDelayInput">初期遅延 秒</label>
@@ -874,7 +881,8 @@
       alightingSetupInput: "降車客が1人以上いる場合だけ加算する固定時間です。",
       crowdingThresholdInput: "車内人数 ÷ 定員がこの値以上なら混雑時固定追加秒を加えます。",
       randomDelayInput: "各停留所間に平均して加わる信号・交通流のランダム遅れです。毎区間必ずこの秒数遅れる意味ではありません。",
-      hotspotInput: "需要が集中し、降車専用スキップを禁止する停留所番号です。カンマ区切りで入力します。",
+      hotspotInput: "需要が集中し、目的地にもなりやすい停留所番号です。カンマ区切りで入力します。",
+      protectHotspotInput: "有効にすると、重要・集中停留所では降車専用スキップを発動しません。無効なら重要停留所でも条件次第でスキップ対象になります。",
       hotspotMultiplierInput: "重要・集中停留所の乗客発生率と目的地選択の重みを強める倍率です。",
       followerLoadInput: "後続バスの混雑率がこの値を超える場合、乗客を任せるのは危険としてスキップを禁止します。",
       initialDelayInput: "最初の先行バスに与える初期遅延です。0なら団子化のきっかけは運行中のランダム要因に任せます。"
@@ -924,20 +932,20 @@
     const PRESETS = {
       urban: {
         name: "高頻度都市路線",
-        seed: 2, stopCount: 20, busCount: 5, durationMin: 90, demandMultiplier: 1,
-        capacity: 30, baseSpeedKmh: 18, stopDistanceKm: 0.25, boardTimeSec: 3,
-        alightTimeSec: 2.8, randomDelaySec: 26, hotspotStops: [0, 10], hotspotMultiplier: 3,
-        forbiddenStops: [0, 10], initialDelaySec: 0, distanceThresholdStops: 2,
-        timeThresholdMin: 3, delayThresholdMin: 2, followerLoadLimit: 0.9, policyMode: "hybrid",
+        seed: 671765, stopCount: 20, busCount: 5, durationMin: 120, demandMultiplier: 0.7,
+        capacity: 30, baseSpeedKmh: 15, stopDistanceKm: 0.3, boardTimeSec: 3,
+        alightTimeSec: 3, randomDelayMeanSec: 25, hotspotStops: [0, 10], hotspotMultiplier: 3,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 2,
+        timeThresholdMin: 3, delayThresholdMin: 5, followerLoadLimit: 0.9, policyMode: "hybrid",
         stopManeuverLossSec: 10, doorTimeSec: 3, boardingSetupSec: 3.5, alightingSetupSec: 3.5,
-        crowdedExtraSec: 5, crowdingThreshold: 0.8
+        crowdedExtraSec: 4, crowdingThreshold: 0.8
       },
       calm: {
         name: "穏やかな需要",
         seed: 18, stopCount: 14, busCount: 5, durationMin: 80, demandMultiplier: 0.42,
         capacity: 62, baseSpeedKmh: 20, stopDistanceKm: 0.55, boardTimeSec: 4,
         alightTimeSec: 4, randomDelaySec: 8, hotspotStops: [4], hotspotMultiplier: 1.2,
-        forbiddenStops: [4], initialDelaySec: 0, distanceThresholdStops: 1,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1,
         timeThresholdMin: 2.5, delayThresholdMin: 1.5, followerLoadLimit: 0.78, policyMode: "hybrid"
       },
       rush: {
@@ -945,7 +953,7 @@
         seed: 77, stopCount: 18, busCount: 7, durationMin: 100, demandMultiplier: 1.95,
         capacity: 58, baseSpeedKmh: 16, stopDistanceKm: 0.45, boardTimeSec: 4,
         alightTimeSec: 4, randomDelaySec: 34, hotspotStops: [2, 3, 4, 5], hotspotMultiplier: 2.2,
-        forbiddenStops: [2, 3, 4, 5], initialDelaySec: 0, distanceThresholdStops: 1.3,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.3,
         timeThresholdMin: 3.5, delayThresholdMin: 1, followerLoadLimit: 0.86, policyMode: "hybrid"
       },
       station: {
@@ -953,7 +961,7 @@
         seed: 91, stopCount: 15, busCount: 5, durationMin: 90, demandMultiplier: 1.65,
         capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.48, boardTimeSec: 4,
         alightTimeSec: 4, randomDelaySec: 32, hotspotStops: [5], hotspotMultiplier: 5.2,
-        forbiddenStops: [5], initialDelaySec: 0, distanceThresholdStops: 1.2,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.2,
         timeThresholdMin: 3, delayThresholdMin: 1.1, followerLoadLimit: 0.82, policyMode: "hybrid"
       },
       rain: {
@@ -961,7 +969,7 @@
         seed: 123, stopCount: 16, busCount: 6, durationMin: 90, demandMultiplier: 1.35,
         capacity: 54, baseSpeedKmh: 15, stopDistanceKm: 0.48, boardTimeSec: 4,
         alightTimeSec: 4, randomDelaySec: 42, hotspotStops: [3, 4], hotspotMultiplier: 2.2,
-        forbiddenStops: [3, 4], initialDelaySec: 0, distanceThresholdStops: 1.3,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.3,
         timeThresholdMin: 3.8, delayThresholdMin: 1, followerLoadLimit: 0.84, policyMode: "hybrid"
       },
       suburban: {
@@ -969,7 +977,7 @@
         seed: 203, stopCount: 18, busCount: 3, durationMin: 120, demandMultiplier: 0.9,
         capacity: 56, baseSpeedKmh: 25, stopDistanceKm: 0.9, boardTimeSec: 4,
         alightTimeSec: 4, randomDelaySec: 18, hotspotStops: [6], hotspotMultiplier: 1.8,
-        forbiddenStops: [6], initialDelaySec: 0, distanceThresholdStops: 1.1,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.1,
         timeThresholdMin: 4, delayThresholdMin: 2.5, followerLoadLimit: 0.72, policyMode: "time"
       },
       important: {
@@ -977,7 +985,7 @@
         seed: 314, stopCount: 17, busCount: 6, durationMin: 90, demandMultiplier: 1.45,
         capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.5, boardTimeSec: 4,
         alightTimeSec: 4, randomDelaySec: 28, hotspotStops: [3, 8, 12], hotspotMultiplier: 2.4,
-        forbiddenStops: [3, 8, 12], initialDelaySec: 0, distanceThresholdStops: 1.25,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.25,
         timeThresholdMin: 3.2, delayThresholdMin: 1.2, followerLoadLimit: 0.82, policyMode: "hybrid"
       }
     };
@@ -1009,7 +1017,8 @@
       c.controlEnabled = raw.controlEnabled !== false;
       c.seed = Number(raw.seed) || 1;
       c.hotspotStops = (c.hotspotStops || []).filter((n) => n >= 0 && n < c.stopCount);
-      c.forbiddenStops = [...c.hotspotStops];
+      c.protectHotspotStops = raw.protectHotspotStops === true || raw.protectHotspotStops === "true";
+      c.forbiddenStops = c.protectHotspotStops ? [...c.hotspotStops] : [];
       return c;
     }
 
@@ -1035,6 +1044,7 @@
         crowdingThreshold: Number($("crowdingThresholdInput").value),
         randomDelayMeanSec: Number($("randomDelayInput").value),
         hotspotStops: parseList($("hotspotInput").value, stopCount),
+        protectHotspotStops: $("protectHotspotInput").value === "true",
         hotspotMultiplier: Number($("hotspotMultiplierInput").value),
         initialDelaySec: Number($("initialDelayInput").value),
         distanceThresholdStops: Number($("distanceThresholdInput").value),
@@ -1064,6 +1074,7 @@
       $("crowdingThresholdInput").value = c.crowdingThreshold;
       $("randomDelayInput").value = fmt(c.randomDelayMeanSec, 1);
       $("hotspotInput").value = c.hotspotStops.join(",");
+      $("protectHotspotInput").value = c.protectHotspotStops ? "true" : "false";
       $("hotspotMultiplierInput").value = c.hotspotMultiplier;
       $("initialDelayInput").value = c.initialDelaySec;
       $("distanceThresholdInput").value = c.distanceThresholdStops;
@@ -1315,6 +1326,13 @@
         if (index < 0) return Infinity;
         const leader = index === 0 ? ordered[ordered.length - 1] : ordered[index - 1];
         const leaderRoutePos = index === 0 ? leader.routePos + this.config.stopCount : leader.routePos;
+        const targetRoutePos = bus.routeSegmentStart + 1;
+        const targetStop = positiveModulo(targetRoutePos, this.config.stopCount);
+        const leaderAtTargetStop = leader.status === "dwelling" && leader.serviceStopId === targetStop;
+        const berthBlockedAtTarget = this.stops[targetStop]?.occupiedByBusId != null || this.stops[targetStop]?.blockedQueue.length > 0;
+        if (targetRoutePos <= leaderRoutePos + 1e-6 && (leaderAtTargetStop || berthBlockedAtTarget)) {
+          return targetRoutePos;
+        }
         return leaderRoutePos - epsilon;
       }
 
