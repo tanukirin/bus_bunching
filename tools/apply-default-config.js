@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 
 const repoRoot = path.resolve(__dirname, "..");
-const indexPath = path.join(repoRoot, "index.html");
+const defaultIndexPath = path.join(repoRoot, "index.html");
 
 const CONFIG_KEYS = [
   "name",
@@ -29,6 +29,11 @@ const CONFIG_KEYS = [
   "delayThresholdMin",
   "followerLoadLimit",
   "policyMode",
+  "springGainSecPerStop",
+  "springDeadbandStops",
+  "springDamping",
+  "springMaxHoldSec",
+  "springMinHoldSec",
   "stopManeuverLossSec",
   "doorTimeSec",
   "boardingSetupSec",
@@ -61,11 +66,16 @@ const INPUT_VALUE_MAP = {
   hotspotInput: "hotspotStops",
   hotspotMultiplierInput: "hotspotMultiplier",
   followerLoadInput: "followerLoadLimit",
-  initialDelayInput: "initialDelaySec"
+  initialDelayInput: "initialDelaySec",
+  springGainInput: "springGainSecPerStop",
+  springDeadbandInput: "springDeadbandStops",
+  springDampingInput: "springDamping",
+  springMaxHoldInput: "springMaxHoldSec",
+  springMinHoldInput: "springMinHoldSec"
 };
 
 function usage() {
-  console.error("Usage: node tools/apply-default-config.js <bus-bunching-config.json|bus-bunching-results.json>");
+  console.error("Usage: node tools/apply-default-config.js <bus-bunching-config.json|bus-bunching-results.json> [index.html|spring/index.html]");
   process.exit(1);
 }
 
@@ -119,6 +129,11 @@ function cleanConfig(raw) {
   clean.delayThresholdMin = numberOr(clean.delayThresholdMin, 2);
   clean.followerLoadLimit = numberOr(clean.followerLoadLimit, 0.9);
   clean.policyMode = ["distance", "time", "hybrid"].includes(clean.policyMode) ? clean.policyMode : "hybrid";
+  clean.springGainSecPerStop = numberOr(clean.springGainSecPerStop, 18);
+  clean.springDeadbandStops = numberOr(clean.springDeadbandStops, 0.6);
+  clean.springDamping = numberOr(clean.springDamping, 0.06);
+  clean.springMaxHoldSec = numberOr(clean.springMaxHoldSec, 45);
+  clean.springMinHoldSec = numberOr(clean.springMinHoldSec, 8);
   clean.stopManeuverLossSec = numberOr(clean.stopManeuverLossSec, 10);
   clean.doorTimeSec = numberOr(clean.doorTimeSec, 3);
   clean.boardingSetupSec = numberOr(clean.boardingSetupSec, 3);
@@ -153,6 +168,7 @@ function formatUrbanPreset(config) {
     `        alightTimeSec: ${config.alightTimeSec}, randomDelayMeanSec: ${config.randomDelayMeanSec}, hotspotStops: ${jsValue(config.hotspotStops)}, hotspotMultiplier: ${config.hotspotMultiplier},`,
     `        protectHotspotStops: ${config.protectHotspotStops}, initialDelaySec: ${config.initialDelaySec}, distanceThresholdStops: ${config.distanceThresholdStops},`,
     `        timeThresholdMin: ${config.timeThresholdMin}, delayThresholdMin: ${config.delayThresholdMin}, followerLoadLimit: ${config.followerLoadLimit}, policyMode: ${jsValue(config.policyMode)},`,
+    `        springGainSecPerStop: ${config.springGainSecPerStop}, springDeadbandStops: ${config.springDeadbandStops}, springDamping: ${config.springDamping}, springMaxHoldSec: ${config.springMaxHoldSec}, springMinHoldSec: ${config.springMinHoldSec},`,
     `        stopManeuverLossSec: ${config.stopManeuverLossSec}, doorTimeSec: ${config.doorTimeSec}, boardingSetupSec: ${config.boardingSetupSec}, alightingSetupSec: ${config.alightingSetupSec},`,
     `        crowdedExtraSec: ${config.crowdedExtraSec}, crowdingThreshold: ${config.crowdingThreshold}`
   ];
@@ -171,7 +187,7 @@ function replaceInputValues(html, config) {
   for (const [id, key] of Object.entries(INPUT_VALUE_MAP)) {
     const value = Array.isArray(config[key]) ? config[key].join(",") : config[key];
     const pattern = new RegExp(`(<input\\s+id="${id}"[^>]*\\svalue=")[^"]*(")`);
-    if (!pattern.test(next)) throw new Error(`入力欄 #${id} を見つけられません。`);
+    if (!pattern.test(next)) continue;
     next = next.replace(pattern, `$1${escapeAttribute(value)}$2`);
   }
   next = replaceSelectOption(next, "policySelect", config.policyMode);
@@ -182,7 +198,7 @@ function replaceInputValues(html, config) {
 function replaceSelectOption(html, id, selectedValue) {
   const selectPattern = new RegExp(`(<select\\s+id="${id}"[^>]*>)([\\s\\S]*?)(<\\/select>)`);
   const match = html.match(selectPattern);
-  if (!match) throw new Error(`選択欄 #${id} を見つけられません。`);
+  if (!match) return html;
   const options = match[2]
     .replace(/\sselected(?=[\s>])/g, "")
     .replace(new RegExp(`(<option\\s+value="${escapeRegExp(selectedValue)}")`), "$1 selected");
@@ -205,13 +221,20 @@ function escapeRegExp(value) {
 function main() {
   const inputPath = process.argv[2];
   if (!inputPath) usage();
+  const targetPath = process.argv[3]
+    ? path.resolve(process.cwd(), process.argv[3])
+    : defaultIndexPath;
+  const relativeTarget = path.relative(repoRoot, targetPath);
+  if (relativeTarget.startsWith("..") || path.isAbsolute(relativeTarget)) {
+    throw new Error(`対象HTMLはリポジトリ内を指定してください: ${targetPath}`);
+  }
   const payload = readJson(path.resolve(process.cwd(), inputPath));
   const config = cleanConfig(extractConfig(payload));
-  let html = fs.readFileSync(indexPath, "utf8");
+  let html = fs.readFileSync(targetPath, "utf8");
   html = replaceUrbanPreset(html, config);
   html = replaceInputValues(html, config);
-  fs.writeFileSync(indexPath, html, "utf8");
-  console.log(`Updated index.html defaults from ${inputPath}`);
+  fs.writeFileSync(targetPath, html, "utf8");
+  console.log(`Updated ${path.relative(repoRoot, targetPath)} defaults from ${inputPath}`);
 }
 
 main();

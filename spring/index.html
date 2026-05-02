@@ -1,0 +1,3102 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>バス団子運転 3方式比較シミュレーター</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #ffffff;
+      --ink: #20242b;
+      --muted: #67707d;
+      --line: #d9d4ca;
+      --blue: #2c6fbb;
+      --green: #25865f;
+      --yellow: #b47b13;
+      --red: #c83f3f;
+      --violet: #7357c8;
+      --teal: #16848b;
+      --shadow: 0 12px 36px rgba(44, 51, 63, 0.12);
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button, input, select {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--ink);
+      padding: 8px 11px;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    button.primary {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+    }
+
+    button:active { transform: translateY(1px); }
+
+    input, select {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--ink);
+      padding: 7px 8px;
+      min-width: 0;
+    }
+
+    input[type="range"] {
+      padding: 0;
+    }
+
+    .app {
+      padding: 22px;
+      max-width: 1720px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 16px;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.12;
+    }
+
+    .title p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      max-width: 940px;
+      line-height: 1.6;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .toolbar .speed {
+      display: grid;
+      grid-template-columns: auto 110px 44px;
+      gap: 7px;
+      align-items: center;
+      padding: 5px 8px;
+      background: rgba(255,255,255,0.68);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-header h2, .panel-header h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .settings-panel .panel-header {
+      align-items: flex-start;
+      flex-wrap: wrap;
+      row-gap: 9px;
+    }
+
+    .settings-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+    }
+
+    .settings-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .settings-actions button {
+      min-height: 32px;
+    }
+
+    .settings-actions input[type="file"] {
+      display: none;
+    }
+
+    .settings-state {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: #eef1f3;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .settings-state.dirty {
+      background: #fff3d7;
+      color: #8a5e08;
+    }
+
+    .panel-body {
+      padding: 14px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .result-tabs {
+      display: inline-flex;
+      gap: 6px;
+      margin: 0 0 12px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .tab-button {
+      min-height: 32px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .tab-button.active {
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .view-note {
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--muted);
+      padding: 18px;
+      line-height: 1.55;
+    }
+
+    .seed-average-layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.3fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .seed-average-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .seed-average-card h3 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .seed-average-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .seed-average-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .seed-average-status-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .seed-preview {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #f6f4ee;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .empty-result {
+      color: var(--muted);
+      text-align: center;
+      padding: 24px 12px;
+      line-height: 1.6;
+    }
+
+    .metric {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 92px;
+    }
+
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .metric .value {
+      font-size: 25px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .metric .sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 5px;
+      line-height: 1.35;
+    }
+
+    .metric.good .value { color: var(--green); }
+    .metric.warn .value { color: var(--yellow); }
+    .metric.bad .value { color: var(--red); }
+
+    .compare {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    .scenario {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fcfbf8;
+    }
+
+    .scenario-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .scenario-title strong {
+      font-size: 15px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #fff;
+      background: var(--muted);
+      white-space: nowrap;
+    }
+
+    .badge.red { background: var(--red); }
+    .badge.green { background: var(--green); }
+    .badge.blue { background: var(--blue); }
+    .badge.yellow { background: var(--yellow); }
+    .badge.violet { background: var(--violet); }
+
+    .route {
+      width: 100%;
+      height: 340px;
+      display: block;
+      background: linear-gradient(#fff, #fbfaf6);
+    }
+
+    .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      padding: 10px 12px 12px;
+      background: #fff;
+    }
+
+    .mini {
+      border-left: 3px solid var(--line);
+      padding-left: 7px;
+    }
+
+    .mini b {
+      display: block;
+      font-size: 14px;
+    }
+
+    .mini span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .chart-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px 12px 12px;
+    }
+
+    .chart-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    canvas.chart {
+      width: 100%;
+      height: 160px;
+      display: block;
+    }
+
+    .side {
+      display: grid;
+      gap: 16px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+    }
+
+    .field.full { grid-column: 1 / -1; }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .field label[title],
+    .field input[title],
+    .field select[title] {
+      cursor: help;
+    }
+
+    .field small {
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    details {
+      border-top: 1px solid var(--line);
+      margin-top: 13px;
+      padding-top: 11px;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--ink);
+      font-weight: 700;
+      margin-bottom: 11px;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+      gap: 7px 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: -1px;
+      background: var(--muted);
+    }
+
+    .commentary {
+      display: grid;
+      gap: 9px;
+      color: var(--ink);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .commentary .line {
+      border-left: 4px solid var(--line);
+      padding-left: 10px;
+    }
+
+    .commentary .good { border-color: var(--green); }
+    .commentary .warn { border-color: var(--yellow); }
+    .commentary .bad { border-color: var(--red); }
+
+    .table-wrap {
+      overflow: auto;
+      max-height: 300px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      background: #fff;
+    }
+
+    th, td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    th:first-child, td:first-child {
+      text-align: left;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+      background: #fff;
+    }
+
+    .education {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .education p, .education li {
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 14px;
+    }
+
+    .education ul {
+      margin: 8px 0 0 18px;
+      padding: 0;
+    }
+
+    .experiment-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .experiment-row .field {
+      min-width: 130px;
+      max-width: 170px;
+    }
+
+    .experiment-output {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .experiment-status {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      margin-top: 10px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #eef1f3;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .experiment-status.running {
+      background: #fff3d7;
+      color: #8a5e08;
+    }
+
+    .experiment-status.done {
+      background: #e8f3ed;
+      color: var(--green);
+    }
+
+    .experiment-status.error {
+      background: #fbe9e7;
+      color: var(--red);
+    }
+
+    .seed-list {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    @media (max-width: 1180px) {
+      .topbar,
+      .grid,
+        .compare,
+      .charts,
+      .seed-average-layout,
+      .education {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar {
+        justify-content: flex-start;
+      }
+
+      .settings-actions {
+        justify-content: flex-start;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .side {
+        grid-row: auto;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .app {
+        padding: 12px;
+      }
+
+      .title h1 {
+        font-size: 23px;
+      }
+
+      .summary-grid,
+      .form-grid,
+      .seed-average-fields,
+      .mini-stats {
+        grid-template-columns: 1fr;
+      }
+
+      .route {
+        height: 300px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">
+        <h1>バス団子運転 3方式比較シミュレーター</h1>
+        <p>同じ需要・同じ乱数条件で、制御なし、距離基準スキップ制御、停留所保持＋補助スキップのスプリング法を同時比較します。</p>
+      </div>
+      <div class="toolbar">
+        <button id="playBtn" class="primary" title="再生または一時停止">再生</button>
+        <button id="stepBtn" title="1ステップ進む">1ステップ</button>
+        <button id="resetBtn" title="同じ条件でリセット">リセット</button>
+        <div class="speed">
+          <span>速度</span>
+          <input id="speedRange" type="range" min="1" max="240" value="18">
+          <b id="speedLabel">18x</b>
+        </div>
+        <button id="exportJsonBtn" title="現在の単一シードのアニメーション結果をJSONで保存">アニメ結果JSON</button>
+        <button id="exportCsvBtn" title="現在の単一シードの主要指標をCSVで保存">アニメ指標CSV</button>
+      </div>
+    </div>
+
+    <div class="result-tabs" role="tablist" aria-label="結果表示">
+      <button id="animationTab" class="tab-button active" type="button" role="tab" aria-selected="true">アニメーション結果</button>
+      <button id="seedAverageTab" class="tab-button" type="button" role="tab" aria-selected="false">シード平均</button>
+    </div>
+
+    <div id="summary" class="summary-grid"></div>
+
+    <div class="grid">
+      <main>
+        <section class="panel" id="routePanel">
+          <div class="panel-header">
+            <h2>横並び比較</h2>
+            <div>
+              <span class="badge blue" id="clockBadge">00:00</span>
+              <span class="badge" id="seedBadge">seed 42</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="compare">
+              <div class="scenario">
+                <div class="scenario-title">
+                  <strong>制御なし</strong>
+                  <span class="badge red" id="plainBunchBadge">団子度 0</span>
+                </div>
+                <svg id="plainRoute" class="route" role="img" aria-label="制御なしの路線表示"></svg>
+                <div id="plainMini" class="mini-stats"></div>
+              </div>
+              <div class="scenario">
+                <div class="scenario-title">
+                  <strong>スキップ制御</strong>
+                  <span class="badge green" id="skipBunchBadge">団子度 0</span>
+                </div>
+                <svg id="skipRoute" class="route" role="img" aria-label="スキップ制御の路線表示"></svg>
+                <div id="skipMini" class="mini-stats"></div>
+              </div>
+              <div class="scenario">
+                <div class="scenario-title">
+                  <strong>スプリング法</strong>
+                  <span class="badge violet" id="springBunchBadge">団子度 0</span>
+                </div>
+                <svg id="springRoute" class="route" role="img" aria-label="スプリング法の路線表示"></svg>
+                <div id="springMini" class="mini-stats"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="seedAverageInfoPanel" hidden>
+          <div class="panel-header">
+            <h2>シード平均</h2>
+            <span class="badge blue" id="seedAverageCountBadge">0 seeds</span>
+          </div>
+          <div class="panel-body">
+            <div class="seed-average-layout">
+              <div class="seed-average-card">
+                <h3>実験条件</h3>
+                <div class="seed-average-fields">
+                  <div class="field">
+                    <label for="seedAverageBaseSeedInput">基準シード</label>
+                    <input id="seedAverageBaseSeedInput" type="number" min="1" value="420550">
+                  </div>
+                  <div class="field">
+                    <label for="seedAverageCountInput">平均シード数</label>
+                    <input id="seedAverageCountInput" type="number" min="1" max="100000" value="200">
+                  </div>
+                </div>
+                <div class="seed-average-actions">
+                  <button id="seedAverageRunBtn" class="primary">シード平均を実行</button>
+                  <button id="seedAverageCancelBtn" hidden>中止</button>
+                  <button id="seedAverageRandomBtn" title="シード平均の基準シードだけをランダムに変更します">新しいシード</button>
+                  <button id="seedAverageSyncBtn">現在の設定から更新</button>
+                  <button id="seedAverageExportJsonBtn" title="直近のシード平均結果をJSONで保存">シード平均JSON</button>
+                  <button id="seedAverageExportCsvBtn" title="直近のシード平均指標をCSVで保存">シード平均CSV</button>
+                </div>
+                <div class="seed-average-status-row">
+                  <span id="seedAverageStatus" class="experiment-status">未実行</span>
+                  <span class="badge" id="seedAverageModeBadge">未計算</span>
+                </div>
+                <div id="seedAverageSeeds" class="seed-preview"></div>
+              </div>
+              <div class="seed-average-card">
+                <h3>読み方</h3>
+                <div class="view-note">
+                  複数シードの平均では現在位置アニメーションを定義しにくいため、路線図は表示しません。
+                  上部サマリー、主要グラフ、自動コメント、詳細指標で3方式を同じ粒度で判断できます。
+                  <div id="seedAverageUsedSeeds" class="seed-list"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" style="margin-top:16px;">
+          <div class="panel-header">
+            <h2>主要グラフ</h2>
+            <div class="legend">
+              <span><i class="dot" style="background:#c83f3f"></i>制御なし</span>
+              <span><i class="dot" style="background:#25865f"></i>スキップ制御</span>
+              <span><i class="dot" style="background:#7357c8"></i>スプリング法</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="charts">
+              <div class="chart-box">
+                <div class="chart-title"><b>団子度</b><span>0-100</span></div>
+                <canvas id="bunchChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>平均 / 95%待ち時間</b><span>分</span></div>
+                <canvas id="waitChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>平均 / 95%総所要時間</b><span>待ち始めから降車まで 分</span></div>
+                <canvas id="totalTimeChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>直近5分の待ち時間</b><span>平均 / 95% 分</span></div>
+                <canvas id="recentWaitChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>最小車間</b><span>停留所数</span></div>
+                <canvas id="headwayChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>最大車間</b><span>停留所数</span></div>
+                <canvas id="maxHeadwayChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>headway RMSE</b><span>停留所数</span></div>
+                <canvas id="rmseChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>スキップ乗客の損失</b><span>平均 / 最大 分</span></div>
+                <canvas id="harmChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>前車待ち遅延</b><span>累積 分</span></div>
+                <canvas id="blockedChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>団子中の前車待ち</b><span>台・分</span></div>
+                <canvas id="bunchBlockedChart" class="chart" width="520" height="180"></canvas>
+              </div>
+              <div class="chart-box">
+                <div class="chart-title"><b>スプリング保持 / 介入</b><span>分 / 回</span></div>
+                <canvas id="springChart" class="chart" width="520" height="180"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="education">
+          <div class="panel">
+            <div class="panel-header"><h3>なぜ団子になるのか</h3></div>
+            <div class="panel-body">
+              <p>少し遅れたバスには停留所で待つ人が多く集まり、乗降時間が伸びてさらに遅れます。後続バスは前のバスに乗客を拾われるため停車時間が短くなり、結果として前のバスへ追いつきます。バース数1・追い越し不可のため、追いついた後続車は停留所手前で前車待ちになり、2台がひとかたまりで動きやすくなります。</p>
+              <ul>
+                <li>遅延が乗客待ち行列を増やす</li>
+                <li>乗客待ち行列が停車時間を増やす</li>
+                <li>停車時間の差が車間をさらに崩す</li>
+                <li>前車待ち遅延が後続車にも遅れを伝える</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><h3>モデルの限界と拡張候補</h3></div>
+            <div class="panel-body">
+              <p>このアプリは教育・議論用の簡略モデルです。信号制御、道路容量、運転士判断、停留所容量、乗客の行動変化は単純化しています。次の拡張では実測OD、停留所別信号、複数系統、乗客属性、公平性制約を追加できます。</p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="side">
+        <section class="panel settings-panel" id="settingsPanel">
+          <div class="panel-header">
+            <div class="settings-title">
+              <h2>設定</h2>
+              <span id="settingsState" class="settings-state">反映済み</span>
+            </div>
+            <div class="settings-actions">
+              <button id="applyBtn" class="primary">設定を反映</button>
+              <button id="randomSeedBtn">新しいシード</button>
+              <button id="exportConfigBtn">設定JSON</button>
+              <button id="importConfigBtn">設定読込</button>
+              <input id="configFileInput" type="file" accept="application/json,.json">
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field full">
+                <label for="presetSelect">プリセット</label>
+                <select id="presetSelect"></select>
+              </div>
+              <div class="field">
+                <label for="seedInput">ランダムシード</label>
+                <input id="seedInput" type="number" min="1" value="58021">
+              </div>
+              <div class="field">
+                <label for="durationInput">時間 分</label>
+                <input id="durationInput" type="number" min="20" max="240" value="120">
+              </div>
+              <div class="field">
+                <label for="stopCountInput">バス停数</label>
+                <input id="stopCountInput" type="number" min="8" max="28" value="20">
+              </div>
+              <div class="field">
+                <label for="busCountInput">バス台数</label>
+                <input id="busCountInput" type="number" min="3" max="10" value="5">
+              </div>
+              <div class="field">
+                <label for="demandInput">需要倍率</label>
+                <input id="demandInput" type="number" min="0.3" max="3" step="0.1" value="0.8">
+              </div>
+              <div class="field">
+                <label for="capacityInput">定員</label>
+                <input id="capacityInput" type="number" min="20" max="110" value="36">
+              </div>
+              <div class="field full">
+                <label>比較方式</label>
+                <small>常に「制御なし / 距離基準スキップ制御 / スプリング法」を同じ需要イベントで同時比較します。スキップ制御は距離基準のみ、スプリング法は停留所保持＋補助スキップのみです。</small>
+              </div>
+              <div class="field">
+                <label for="distanceThresholdInput">後続車間しきい値 停</label>
+                <input id="distanceThresholdInput" type="number" min="0.2" max="3" step="0.1" value="1.8">
+              </div>
+              <div class="field">
+                <label for="delayThresholdInput">先行遅延しきい値 分</label>
+                <input id="delayThresholdInput" type="number" min="0" max="12" step="0.25" value="5">
+              </div>
+            </div>
+
+            <details>
+              <summary>詳細設定</summary>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="speedInput">基本速度 km/h</label>
+                  <input id="speedInput" type="number" min="8" max="40" step="1" value="15">
+                </div>
+                <div class="field">
+                  <label for="distanceInput">停留所間 km</label>
+                  <input id="distanceInput" type="number" min="0.2" max="1.5" step="0.05" value="0.3">
+                </div>
+                <div class="field">
+                  <label for="boardTimeInput">乗車 秒/人</label>
+                  <input id="boardTimeInput" type="number" min="1" max="10" step="0.1" value="3">
+                </div>
+                <div class="field">
+                  <label for="alightTimeInput">降車 秒/人</label>
+                  <input id="alightTimeInput" type="number" min="0.5" max="10" step="0.1" value="3">
+                </div>
+                <div class="field">
+                  <label for="crowdedExtraInput">混雑時 固定追加秒</label>
+                  <input id="crowdedExtraInput" type="number" min="0" max="30" step="0.5" value="4">
+                </div>
+                <div class="field">
+                  <label for="stopLossInput">減速・加速ロス 秒/停車</label>
+                  <input id="stopLossInput" type="number" min="0" max="60" step="1" value="10">
+                </div>
+                <div class="field">
+                  <label for="doorTimeInput">ドア開閉 秒/停車</label>
+                  <input id="doorTimeInput" type="number" min="0" max="20" step="0.5" value="3">
+                </div>
+                <div class="field">
+                  <label for="boardingSetupInput">乗車発生時 固定秒</label>
+                  <input id="boardingSetupInput" type="number" min="0" max="30" step="0.5" value="3.5">
+                </div>
+                <div class="field">
+                  <label for="alightingSetupInput">降車発生時 固定秒</label>
+                  <input id="alightingSetupInput" type="number" min="0" max="30" step="0.5" value="3.5">
+                </div>
+                <div class="field">
+                  <label for="crowdingThresholdInput">混雑判定しきい値</label>
+                  <input id="crowdingThresholdInput" type="number" min="0.3" max="1" step="0.05" value="0.8">
+                </div>
+                <div class="field">
+                  <label for="randomDelayInput">区間平均遅れ 秒</label>
+                  <input id="randomDelayInput" type="number" min="0" max="180" step="0.1" value="28">
+                </div>
+                <div class="field">
+                  <label for="hotspotInput">重要・集中停留所</label>
+                  <input id="hotspotInput" type="text" value="0,7,14">
+                </div>
+                <div class="field">
+                  <label for="protectHotspotInput">重要停留所スキップ禁止</label>
+                  <select id="protectHotspotInput">
+                    <option value="false" selected>無効</option>
+                    <option value="true">有効</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="hotspotMultiplierInput">集中倍率</label>
+                  <input id="hotspotMultiplierInput" type="number" min="1" max="6" step="0.25" value="3">
+                </div>
+                <div class="field">
+                  <label for="followerLoadInput">後続混雑率しきい値</label>
+                  <input id="followerLoadInput" type="number" min="0.3" max="1" step="0.05" value="0.9">
+                </div>
+                <div class="field">
+                  <label for="initialDelayInput">初期遅延 秒</label>
+                  <input id="initialDelayInput" type="number" min="0" max="240" value="0">
+                </div>
+                <div class="field">
+                  <label for="springGainInput">スプリングゲイン 秒/停</label>
+                  <input id="springGainInput" type="number" min="0" max="90" step="1" value="40">
+                </div>
+                <div class="field">
+                  <label for="springDeadbandInput">スプリング不感帯 停</label>
+                  <input id="springDeadbandInput" type="number" min="0" max="4" step="0.1" value="1.2">
+                </div>
+                <div class="field">
+                  <label for="springDampingInput">springDamping</label>
+                  <input id="springDampingInput" type="number" min="0" max="0.5" step="0.01" value="0">
+                </div>
+                <div class="field">
+                  <label for="springMaxHoldInput">最大保持秒</label>
+                  <input id="springMaxHoldInput" type="number" min="0" max="180" step="5" value="180">
+                </div>
+                <div class="field">
+                  <label for="springMinHoldInput">最小保持秒</label>
+                  <input id="springMinHoldInput" type="number" min="0" max="60" step="1" value="20">
+                </div>
+              </div>
+            </details>
+
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header"><h2>自動コメント</h2></div>
+          <div class="panel-body">
+            <div id="comments" class="commentary"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header"><h2>詳細指標</h2></div>
+          <div class="panel-body">
+            <div id="detailsTable" class="table-wrap"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header"><h2>軽量実験</h2></div>
+          <div class="panel-body">
+            <div class="experiment-row">
+              <button id="multiSeedBtn">シード平均タブを開く</button>
+              <button id="sweepBtn">しきい値スイープ</button>
+            </div>
+            <div id="experimentOutput" class="experiment-output">アニメーションとは別に高速計算します。</div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    "use strict";
+
+    const $ = (id) => document.getElementById(id);
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const fmt = (v, d = 1) => Number.isFinite(v) ? v.toFixed(d) : "-";
+    const mean = (a) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0;
+    const sum = (a) => a.reduce((s, v) => s + v, 0);
+    const std = (a) => {
+      if (a.length < 2) return 0;
+      const m = mean(a);
+      return Math.sqrt(mean(a.map((v) => (v - m) ** 2)));
+    };
+    const pct = (a, p) => {
+      if (!a.length) return 0;
+      const b = [...a].sort((x, y) => x - y);
+      const idx = clamp(Math.ceil((p / 100) * b.length) - 1, 0, b.length - 1);
+      return b[idx];
+    };
+    const circularForward = (from, to, length) => (to - from + length) % length;
+    const NOISE_MEAN_FACTOR = 0.24 * 0.5 + 0.76 * 0.22 * 0.5 + 0.035 * ((0.6 + 1.8) / 2);
+    const legacyDelayScaleToMean = (baseTravelSec, scaleSec) => Math.max(0, baseTravelSec * 0.02 + Math.max(0, scaleSec) * NOISE_MEAN_FACTOR);
+    const delayMeanToScale = (meanSec) => Math.max(0, meanSec) / NOISE_MEAN_FACTOR;
+    const positiveModulo = (value, length) => ((value % length) + length) % length;
+    const parseList = (txt, maxExclusive) => String(txt || "")
+      .split(",")
+      .map((x) => Number.parseInt(x.trim(), 10))
+      .filter((n, i, arr) => Number.isInteger(n) && n >= 0 && n < maxExclusive && arr.indexOf(n) === i);
+    const formatSeedList = (seeds, limit = 30) => {
+      const shown = seeds.slice(0, limit).join(", ");
+      const suffix = seeds.length > limit ? ` ... +${seeds.length - limit}` : "";
+      return `${shown}${suffix}`;
+    };
+
+    const SEED_AVERAGE_SD_KEYS = [
+      "avgWaitMin", "p95WaitMin", "maxWaitMin", "recentAvgWaitMin", "recentP95WaitMin",
+      "avgTotalMin", "p95TotalMin",
+      "bunchScore", "bunchDurationMin", "headwayErrorSum", "headwayRmseStops",
+      "minHeadwayStops", "maxHeadwayStops", "avgDelayMin", "maxDelayMin",
+      "totalBlockedDelayMin", "blockEvents", "maxBlockedDelayMin",
+      "skippedPassengers", "skipAvgExtraMin", "skipMaxExtraMin",
+      "multiSkippedPassengers", "deniedAfterSkip", "fullPassEvents",
+      "springHoldEvents", "totalSpringHoldMin", "avgSpringHoldSec", "maxSpringHoldSec",
+      "springSkipAssistEvents", "springInterventionCount", "springPositiveSignalAvg",
+      "springNegativeSignalAvg", "springSignalAbsAvg"
+    ];
+
+    const MODE_KEYS = ["plain", "skip", "spring"];
+    const MODE_LABELS = { plain: "制御なし", skip: "スキップ制御", spring: "スプリング法" };
+    const MODE_COLORS = { plain: "#c83f3f", skip: "#25865f", spring: "#7357c8" };
+
+    const averageMetrics = (metricsList) => {
+      const out = {};
+      const keys = new Set(metricsList.flatMap((m) => Object.keys(m)));
+      for (const key of keys) {
+        const values = metricsList.map((m) => m[key]).filter((v) => v != null);
+        if (!values.length) continue;
+        if (values.every((v) => typeof v === "number" && Number.isFinite(v))) {
+          out[key] = mean(values);
+        } else if (values.every((v) => Array.isArray(v))) {
+          const len = Math.max(...values.map((v) => v.length));
+          out[key] = Array.from({ length: len }, (_, i) => {
+            const nums = values.map((v) => v[i]).filter((n) => Number.isFinite(n));
+            return nums.length ? mean(nums) : 0;
+          });
+        }
+      }
+      return out;
+    };
+
+    const sdMetrics = (metricsList) => {
+      const out = {};
+      for (const key of SEED_AVERAGE_SD_KEYS) {
+        const nums = metricsList.map((m) => m[key]).filter((v) => Number.isFinite(v));
+        out[key] = nums.length ? std(nums) : 0;
+      }
+      return out;
+    };
+
+    const averageHistories = (histories) => {
+      if (!histories.length) return [];
+      const length = Math.max(...histories.map((h) => h.length));
+      const keys = new Set(histories.flatMap((h) => h.flatMap((row) => Object.keys(row))));
+      return Array.from({ length }, (_, i) => {
+        const row = {};
+        for (const key of keys) {
+          const nums = histories.map((h) => h[i]?.[key]).filter((v) => Number.isFinite(v));
+          if (nums.length) row[key] = key === "t" ? nums[0] : mean(nums);
+        }
+        return row;
+      }).filter((row) => Number.isFinite(row.t));
+    };
+
+    const addStat = (bucket, value) => {
+      if (!Number.isFinite(value)) return;
+      bucket.n += 1;
+      bucket.sum += value;
+      bucket.sq += value * value;
+    };
+
+    const statMean = (bucket) => bucket.n ? bucket.sum / bucket.n : 0;
+    const statSd = (bucket) => {
+      if (!bucket.n) return 0;
+      const m = statMean(bucket);
+      return Math.sqrt(Math.max(0, bucket.sq / bucket.n - m * m));
+    };
+
+    const emptyStat = () => ({ n: 0, sum: 0, sq: 0 });
+
+    const createStreamingStats = () => ({ scalar: {}, arrays: {} });
+
+    const addMetricStreamingStats = (stats, metrics) => {
+      for (const [key, value] of Object.entries(metrics)) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+          if (!stats.scalar[key]) stats.scalar[key] = emptyStat();
+          addStat(stats.scalar[key], value);
+        } else if (Array.isArray(value)) {
+          if (!stats.arrays[key]) stats.arrays[key] = [];
+          value.forEach((item, i) => {
+            if (!stats.arrays[key][i]) stats.arrays[key][i] = emptyStat();
+            addStat(stats.arrays[key][i], item);
+          });
+        }
+      }
+    };
+
+    const meanFromStreamingStats = (stats) => {
+      const out = {};
+      for (const [key, bucket] of Object.entries(stats.scalar)) out[key] = statMean(bucket);
+      for (const [key, buckets] of Object.entries(stats.arrays)) out[key] = buckets.map((bucket) => statMean(bucket || emptyStat()));
+      return out;
+    };
+
+    const sdFromStreamingStats = (stats) => {
+      const out = {};
+      for (const key of SEED_AVERAGE_SD_KEYS) out[key] = stats.scalar[key] ? statSd(stats.scalar[key]) : 0;
+      return out;
+    };
+
+    const addHistoryStreamingStats = (rows, history) => {
+      history.forEach((snapshot, i) => {
+        if (!rows[i]) rows[i] = {};
+        for (const [key, value] of Object.entries(snapshot)) {
+          if (!Number.isFinite(value)) continue;
+          if (!rows[i][key]) rows[i][key] = emptyStat();
+          addStat(rows[i][key], value);
+        }
+      });
+    };
+
+    const historyFromStreamingStats = (rows) => rows.map((row) => {
+      const out = {};
+      for (const [key, bucket] of Object.entries(row)) out[key] = statMean(bucket);
+      return out;
+    }).filter((row) => Number.isFinite(row.t));
+
+    const createSeedAverageAccumulator = () => {
+      const metrics = Object.fromEntries(MODE_KEYS.map((mode) => [mode, createStreamingStats()]));
+      const histories = Object.fromEntries(MODE_KEYS.map((mode) => [mode, []]));
+      return {
+        add(result) {
+          for (const mode of MODE_KEYS) {
+            addMetricStreamingStats(metrics[mode], result[mode].metrics);
+            addHistoryStreamingStats(histories[mode], result[mode].history);
+          }
+        },
+        build(seeds, config) {
+          return {
+            seeds,
+            plainMetrics: meanFromStreamingStats(metrics.plain),
+            skipMetrics: meanFromStreamingStats(metrics.skip),
+            springMetrics: meanFromStreamingStats(metrics.spring),
+            plainSd: sdFromStreamingStats(metrics.plain),
+            skipSd: sdFromStreamingStats(metrics.skip),
+            springSd: sdFromStreamingStats(metrics.spring),
+            plainHistory: historyFromStreamingStats(histories.plain),
+            skipHistory: historyFromStreamingStats(histories.skip),
+            springHistory: historyFromStreamingStats(histories.spring),
+            stopCount: config.stopCount,
+            durationMin: config.durationMin,
+            config: { ...config }
+          };
+        }
+      };
+    };
+
+    const PARAM_HELP = {
+      presetSelect: "典型的な運行条件をまとめて切り替えます。選択すると即時にシミュレーションをリセットします。",
+      seedInput: "乗客発生と走行遅れを再現するための乱数シードです。同じ値なら同じ条件で比較できます。",
+      durationInput: "シミュレーションする時間です。長いほど団子化と回復の長期傾向を見やすくなります。",
+      stopCountInput: "環状路線上の停留所数です。多いほど路線が長くなります。",
+      busCountInput: "同じ路線を走るバス台数です。多いほど高頻度になり、後続車が接近しやすくなります。",
+      demandInput: "全停留所の乗客到着率に掛ける倍率です。大きいほど待ち行列と停車時間が増えます。",
+      capacityInput: "バス1台に乗れる最大人数です。超過した乗客は停留所に残り、満員通過として集計されます。",
+      distanceThresholdInput: "後続バスが何停留所以内なら距離基準スキップの候補にするかを指定します。",
+      delayThresholdInput: "対象バスが何分以上遅れているときだけスキップを検討するかを指定します。スプリング保持には使いません。",
+      speedInput: "停留所間を走る基準速度です。停車時間や前車待ちは含みません。",
+      distanceInput: "隣接停留所間の距離です。基本速度と合わせて基準走行時間を決めます。",
+      boardTimeInput: "乗車客1人あたりの処理時間です。停車時間に人数分だけ加算されます。",
+      alightTimeInput: "降車客1人あたりの処理時間です。停車時間に人数分だけ加算されます。",
+      crowdedExtraInput: "混雑率がしきい値以上のとき、乗車処理と降車処理それぞれの固定時間に追加します。",
+      stopLossInput: "停留所への寄せ、減速、発進、交通流への復帰にかかる停車ごとのロスです。",
+      doorTimeInput: "ドア開閉と客扱い開始・終了にかかる停車ごとの基本時間です。",
+      boardingSetupInput: "乗車客が1人以上いる場合だけ加算する固定時間です。",
+      alightingSetupInput: "降車客が1人以上いる場合だけ加算する固定時間です。",
+      crowdingThresholdInput: "車内人数 ÷ 定員がこの値以上なら混雑時固定追加秒を加えます。",
+      randomDelayInput: "各停留所間に平均して加わる信号・交通流のランダム遅れです。毎区間必ずこの秒数遅れる意味ではありません。",
+      hotspotInput: "需要が集中し、目的地にもなりやすい停留所番号です。カンマ区切りで入力します。",
+      protectHotspotInput: "有効にすると、重要・集中停留所では降車専用スキップを発動しません。無効なら重要停留所でも条件次第でスキップ対象になります。",
+      hotspotMultiplierInput: "重要・集中停留所の乗客発生率と目的地選択の重みを強める倍率です。",
+      followerLoadInput: "後続バスの混雑率がこの値を超える場合、乗客を任せるのは危険としてスキップを禁止します。",
+      initialDelayInput: "最初の先行バスに与える初期遅延です。0なら団子化のきっかけは運行中のランダム要因に任せます。",
+      springGainInput: "springSignal が負のとき、どれだけ停留所保持秒へ変換するかを指定します。",
+      springDeadbandInput: "前後車間の差がこの範囲内ならスプリング保持や補助スキップを抑えます。",
+      springDampingInput: "既に遅れているバスの追加保持を弱める係数です。速度調整ではありません。",
+      springMaxHoldInput: "1回の停留所保持で追加できる最大秒数です。",
+      springMinHoldInput: "短すぎて現実的に扱いにくい保持を避けるため、計算された保持秒がこの値未満なら保持しません。",
+      seedAverageBaseSeedInput: "シード平均の起点にする乱数シードです。現在の設定のランダムシードと同じ値にできます。",
+      seedAverageCountInput: "シード平均で実行する乱数シードの数です。基準シードを起点に、101ずつ増やした条件を平均します。上限は100000ですが、大量計算は時間がかかります。"
+    };
+
+    function applyParameterHelp() {
+      for (const [id, help] of Object.entries(PARAM_HELP)) {
+        const input = $(id);
+        if (!input) continue;
+        input.title = help;
+        input.setAttribute("aria-label", `${input.labels?.[0]?.textContent || id}: ${help}`);
+        for (const label of input.labels || []) {
+          label.title = help;
+        }
+      }
+    }
+
+    class SeededRng {
+      constructor(seed) {
+        this.seed = seed >>> 0 || 1;
+      }
+      next() {
+        let t = this.seed += 0x6D2B79F5;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      }
+      range(min, max) {
+        return min + (max - min) * this.next();
+      }
+      int(min, maxInclusive) {
+        return Math.floor(this.range(min, maxInclusive + 1));
+      }
+      poisson(lambda) {
+        if (lambda <= 0) return 0;
+        const l = Math.exp(-lambda);
+        let k = 0;
+        let p = 1;
+        do {
+          k++;
+          p *= this.next();
+        } while (p > l);
+        return k - 1;
+      }
+    }
+
+    const PRESETS = {
+      urban: {
+        name: "高頻度都市路線",
+        seed: 58021, stopCount: 20, busCount: 5, durationMin: 120, demandMultiplier: 0.8,
+        capacity: 36, baseSpeedKmh: 15, stopDistanceKm: 0.3, boardTimeSec: 3,
+        alightTimeSec: 3, randomDelayMeanSec: 28, hotspotStops: [0, 7, 14], hotspotMultiplier: 3,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.8,
+        timeThresholdMin: 3, delayThresholdMin: 5, followerLoadLimit: 0.9, policyMode: "hybrid",
+        springGainSecPerStop: 40, springDeadbandStops: 1.2, springDamping: 0, springMaxHoldSec: 180, springMinHoldSec: 20,
+        stopManeuverLossSec: 10, doorTimeSec: 3, boardingSetupSec: 3.5, alightingSetupSec: 3.5,
+        crowdedExtraSec: 4, crowdingThreshold: 0.8
+      },
+      calm: {
+        name: "穏やかな需要",
+        seed: 18, stopCount: 14, busCount: 5, durationMin: 80, demandMultiplier: 0.42,
+        capacity: 62, baseSpeedKmh: 20, stopDistanceKm: 0.55, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 8, hotspotStops: [4], hotspotMultiplier: 1.2,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1,
+        timeThresholdMin: 2.5, delayThresholdMin: 1.5, followerLoadLimit: 0.78, policyMode: "hybrid"
+      },
+      rush: {
+        name: "通勤ラッシュ",
+        seed: 77, stopCount: 18, busCount: 7, durationMin: 100, demandMultiplier: 1.95,
+        capacity: 58, baseSpeedKmh: 16, stopDistanceKm: 0.45, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 34, hotspotStops: [2, 3, 4, 5], hotspotMultiplier: 2.2,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.3,
+        timeThresholdMin: 3.5, delayThresholdMin: 1, followerLoadLimit: 0.86, policyMode: "hybrid"
+      },
+      station: {
+        name: "駅前集中",
+        seed: 91, stopCount: 15, busCount: 5, durationMin: 90, demandMultiplier: 1.65,
+        capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.48, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 32, hotspotStops: [5], hotspotMultiplier: 5.2,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.2,
+        timeThresholdMin: 3, delayThresholdMin: 1.1, followerLoadLimit: 0.82, policyMode: "hybrid"
+      },
+      rain: {
+        name: "雨の日",
+        seed: 123, stopCount: 16, busCount: 6, durationMin: 90, demandMultiplier: 1.35,
+        capacity: 54, baseSpeedKmh: 15, stopDistanceKm: 0.48, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 42, hotspotStops: [3, 4], hotspotMultiplier: 2.2,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.3,
+        timeThresholdMin: 3.8, delayThresholdMin: 1, followerLoadLimit: 0.84, policyMode: "hybrid"
+      },
+      suburban: {
+        name: "低頻度郊外路線",
+        seed: 203, stopCount: 18, busCount: 3, durationMin: 120, demandMultiplier: 0.9,
+        capacity: 56, baseSpeedKmh: 25, stopDistanceKm: 0.9, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 18, hotspotStops: [6], hotspotMultiplier: 1.8,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.1,
+        timeThresholdMin: 4, delayThresholdMin: 2.5, followerLoadLimit: 0.72, policyMode: "time"
+      },
+      important: {
+        name: "重要停留所あり",
+        seed: 314, stopCount: 17, busCount: 6, durationMin: 90, demandMultiplier: 1.45,
+        capacity: 54, baseSpeedKmh: 18, stopDistanceKm: 0.5, boardTimeSec: 4,
+        alightTimeSec: 4, randomDelaySec: 28, hotspotStops: [3, 8, 12], hotspotMultiplier: 2.4,
+        protectHotspotStops: false, initialDelaySec: 0, distanceThresholdStops: 1.25,
+        timeThresholdMin: 3.2, delayThresholdMin: 1.2, followerLoadLimit: 0.82, policyMode: "hybrid"
+      }
+    };
+
+    function normalizeConfig(raw) {
+      const c = structuredClone(raw);
+      c.stopCount = clamp(Math.round(c.stopCount), 8, 28);
+      c.busCount = clamp(Math.round(c.busCount), 3, Math.min(10, c.stopCount - 2));
+      c.durationSec = Math.round(c.durationMin * 60);
+      c.baseTravelSec = Math.max(20, c.stopDistanceKm / Math.max(4, c.baseSpeedKmh) * 3600);
+      const legacyRandomDelayScaleSec = Number.isFinite(c.randomDelaySec) ? c.randomDelaySec : 26;
+      if (!Number.isFinite(c.randomDelayMeanSec)) {
+        c.randomDelayMeanSec = legacyDelayScaleToMean(c.baseTravelSec, legacyRandomDelayScaleSec);
+      }
+      c.randomDelayMeanSec = clamp(c.randomDelayMeanSec, 0, 180);
+      c.randomDelayScaleSec = delayMeanToScale(c.randomDelayMeanSec);
+      delete c.randomDelaySec;
+      c.doorTimeSec = Number.isFinite(c.doorTimeSec) ? c.doorTimeSec : 4;
+      c.stopManeuverLossSec = Number.isFinite(c.stopManeuverLossSec) ? c.stopManeuverLossSec : 14;
+      c.boardingSetupSec = Number.isFinite(c.boardingSetupSec) ? c.boardingSetupSec : 2;
+      c.alightingSetupSec = Number.isFinite(c.alightingSetupSec) ? c.alightingSetupSec : 1;
+      c.crowdedExtraSec = Number.isFinite(c.crowdedExtraSec) ? c.crowdedExtraSec : 5;
+      c.crowdingThreshold = Number.isFinite(c.crowdingThreshold) ? c.crowdingThreshold : 0.75;
+      c.baseStopSec = c.doorTimeSec;
+      c.sampleIntervalSec = 15;
+      c.waitWindowSec = 300;
+      c.arrivalQuantumSec = 5;
+      c.noiseBucketSec = 60;
+      c.controlEnabled = raw.controlEnabled !== false;
+      c.controlMode = raw.controlMode || "none";
+      c.seed = Number(raw.seed) || 1;
+      const numberWithDefault = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+      c.distanceThresholdStops = clamp(numberWithDefault(c.distanceThresholdStops, 1.8), 0.2, 3);
+      c.delayThresholdMin = clamp(numberWithDefault(c.delayThresholdMin, 0), 0, 12);
+      c.followerLoadLimit = clamp(numberWithDefault(c.followerLoadLimit, 0.9), 0.3, 1);
+      c.springGainSecPerStop = clamp(numberWithDefault(c.springGainSecPerStop, 18), 0, 90);
+      c.springDeadbandStops = clamp(numberWithDefault(c.springDeadbandStops, 0.6), 0, 4);
+      c.springDamping = clamp(numberWithDefault(c.springDamping, 0.06), 0, 0.5);
+      c.springMaxHoldSec = clamp(numberWithDefault(c.springMaxHoldSec, 45), 0, 180);
+      c.springMinHoldSec = clamp(numberWithDefault(c.springMinHoldSec, 8), 0, 60);
+      c.hotspotStops = (c.hotspotStops || []).filter((n) => n >= 0 && n < c.stopCount);
+      c.protectHotspotStops = raw.protectHotspotStops === true || raw.protectHotspotStops === "true";
+      c.forbiddenStops = c.protectHotspotStops ? [...c.hotspotStops] : [];
+      return c;
+    }
+
+    function buildConfigFromInputs() {
+      const stopCount = Number($("stopCountInput").value);
+      return normalizeConfig({
+        name: $("presetSelect").selectedOptions[0]?.textContent || "カスタム",
+        seed: Number($("seedInput").value),
+        durationMin: Number($("durationInput").value),
+        stopCount,
+        busCount: Number($("busCountInput").value),
+        demandMultiplier: Number($("demandInput").value),
+        capacity: Number($("capacityInput").value),
+        baseSpeedKmh: Number($("speedInput").value),
+        stopDistanceKm: Number($("distanceInput").value),
+        boardTimeSec: Number($("boardTimeInput").value),
+        alightTimeSec: Number($("alightTimeInput").value),
+        crowdedExtraSec: Number($("crowdedExtraInput").value),
+        stopManeuverLossSec: Number($("stopLossInput").value),
+        doorTimeSec: Number($("doorTimeInput").value),
+        boardingSetupSec: Number($("boardingSetupInput").value),
+        alightingSetupSec: Number($("alightingSetupInput").value),
+        crowdingThreshold: Number($("crowdingThresholdInput").value),
+        randomDelayMeanSec: Number($("randomDelayInput").value),
+        hotspotStops: parseList($("hotspotInput").value, stopCount),
+        protectHotspotStops: $("protectHotspotInput").value === "true",
+        hotspotMultiplier: Number($("hotspotMultiplierInput").value),
+        initialDelaySec: Number($("initialDelayInput").value),
+        distanceThresholdStops: Number($("distanceThresholdInput").value),
+        delayThresholdMin: Number($("delayThresholdInput").value),
+        followerLoadLimit: Number($("followerLoadInput").value),
+        springGainSecPerStop: Number($("springGainInput").value),
+        springDeadbandStops: Number($("springDeadbandInput").value),
+        springDamping: Number($("springDampingInput").value),
+        springMaxHoldSec: Number($("springMaxHoldInput").value),
+        springMinHoldSec: Number($("springMinHoldInput").value)
+      });
+    }
+
+    function applyConfigToInputs(c) {
+      $("seedInput").value = c.seed;
+      $("durationInput").value = c.durationMin;
+      $("stopCountInput").value = c.stopCount;
+      $("busCountInput").value = c.busCount;
+      $("demandInput").value = c.demandMultiplier;
+      $("capacityInput").value = c.capacity;
+      $("speedInput").value = c.baseSpeedKmh;
+      $("distanceInput").value = c.stopDistanceKm;
+      $("boardTimeInput").value = c.boardTimeSec;
+      $("alightTimeInput").value = c.alightTimeSec;
+      $("crowdedExtraInput").value = c.crowdedExtraSec;
+      $("stopLossInput").value = c.stopManeuverLossSec;
+      $("doorTimeInput").value = c.doorTimeSec;
+      $("boardingSetupInput").value = c.boardingSetupSec;
+      $("alightingSetupInput").value = c.alightingSetupSec;
+      $("crowdingThresholdInput").value = c.crowdingThreshold;
+      $("randomDelayInput").value = fmt(c.randomDelayMeanSec, 1);
+      $("hotspotInput").value = c.hotspotStops.join(",");
+      $("protectHotspotInput").value = c.protectHotspotStops ? "true" : "false";
+      $("hotspotMultiplierInput").value = c.hotspotMultiplier;
+      $("initialDelayInput").value = c.initialDelaySec;
+      $("distanceThresholdInput").value = c.distanceThresholdStops;
+      $("delayThresholdInput").value = c.delayThresholdMin;
+      $("followerLoadInput").value = c.followerLoadLimit;
+      $("springGainInput").value = c.springGainSecPerStop;
+      $("springDeadbandInput").value = c.springDeadbandStops;
+      $("springDampingInput").value = c.springDamping;
+      $("springMaxHoldInput").value = c.springMaxHoldSec;
+      $("springMinHoldInput").value = c.springMinHoldSec;
+    }
+
+    class EventGenerator {
+      static demandEvents(config) {
+        const rng = new SeededRng(config.seed);
+        const events = [];
+        let id = 1;
+        const baseRatePerMin = 0.23 * config.demandMultiplier;
+        for (let t = 0; t <= config.durationSec + 1800; t += config.arrivalQuantumSec) {
+          const wave = 0.82 + 0.38 * Math.sin((t / config.durationSec) * Math.PI);
+          for (let stop = 0; stop < config.stopCount; stop++) {
+            const centerBias = 0.75 + 0.35 * Math.sin(((stop + 1) / config.stopCount) * Math.PI);
+            const hotspot = config.hotspotStops.includes(stop) ? config.hotspotMultiplier : 1;
+            const rate = baseRatePerMin * wave * centerBias * hotspot;
+            const count = rng.poisson(rate * config.arrivalQuantumSec / 60);
+            for (let i = 0; i < count; i++) {
+              const offset = rng.range(0, config.arrivalQuantumSec);
+              const dest = EventGenerator.chooseDestination(config, rng, stop);
+              events.push({ id: id++, time: t + offset, origin: stop, dest });
+            }
+          }
+        }
+        events.sort((a, b) => a.time - b.time);
+        return events;
+      }
+
+      static chooseDestination(config, rng, origin) {
+        const candidates = [];
+        for (let step = 1; step < config.stopCount; step++) {
+          const stop = (origin + step) % config.stopCount;
+          const isImportant = config.hotspotStops.includes(stop);
+          const nearTripBias = 1 / Math.sqrt(step);
+          const importantWeight = isImportant ? Math.max(2.5, config.hotspotMultiplier * 1.8) : 1;
+          const downstreamHubBonus = isImportant && step <= config.stopCount * 0.75 ? 1.4 : 1;
+          candidates.push({ stop, weight: nearTripBias * importantWeight * downstreamHubBonus });
+        }
+        const total = sum(candidates.map((c) => c.weight));
+        let pick = rng.range(0, total);
+        for (const c of candidates) {
+          pick -= c.weight;
+          if (pick <= 0) return c.stop;
+        }
+        return candidates[candidates.length - 1].stop;
+      }
+
+      static travelNoise(config, fromStop, startTimeSec) {
+        const bucket = Math.floor(startTimeSec / Math.max(1, config.noiseBucketSec || 60));
+        const rng = new SeededRng(config.seed * 100003 + fromStop * 9176 + bucket * 7919);
+        const scale = Number.isFinite(config.randomDelayScaleSec) ? config.randomDelayScaleSec : Math.max(0, config.randomDelaySec || 0);
+        const jitter = rng.range(-0.1, 0.1) * config.baseTravelSec;
+        const signal = rng.next() < 0.24 ? rng.range(0, scale) : rng.range(0, scale * 0.22);
+        const surge = rng.next() < 0.035 ? rng.range(scale * 0.6, scale * 1.8) : 0;
+        return Math.max(-config.baseTravelSec * 0.18, jitter + signal + surge);
+      }
+    }
+
+    class Simulation {
+      constructor(config, mode, demandEvents) {
+        this.config = config;
+        this.mode = mode;
+        this.controlEnabled = mode !== "plain";
+        this.springEnabled = mode === "spring";
+        this.events = demandEvents;
+        this.eventIndex = 0;
+        this.time = 0;
+        this.waiting = Array.from({ length: config.stopCount }, () => []);
+        this.stops = this.createStops();
+        this.completed = [];
+        this.allPassengers = new Map();
+        this.history = [];
+        this.skipLog = [];
+        this.fullPassLog = [];
+        this.blockLog = [];
+        this.springHoldLog = [];
+        this.springSignalLog = [];
+        this.bunchActive = false;
+        this.bunchStarts = 0;
+        this.bunchDuration = 0;
+        this.blockedDuringBunchSec = 0;
+        this.closePairEvents = 0;
+        this.totalDwell = 0;
+        this.totalSpringHoldSec = 0;
+        this.maxSpringHoldSec = 0;
+        this.springSkipAssistEvents = 0;
+        this.totalBlockedDelaySec = 0;
+        this.blockEvents = 0;
+        this.maxBlockedSec = 0;
+        this.lastSampleTime = null;
+        this.lastSnapshot = null;
+        this.buses = this.createBuses();
+      }
+
+      createStops() {
+        return Array.from({ length: this.config.stopCount }, (_, id) => ({
+          id,
+          occupiedByBusId: null,
+          serviceEndTime: 0,
+          blockedQueue: [],
+          totalBlockedDelaySec: 0,
+          blockEvents: 0,
+          maxBlockedSec: 0,
+          maxQueue: 0,
+          totalOccupiedSec: 0
+        }));
+      }
+
+      createBuses() {
+        const buses = [];
+        const spacing = this.config.stopCount / this.config.busCount;
+        for (let i = 0; i < this.config.busCount; i++) {
+          const routePos = -i * spacing;
+          const pos = positiveModulo(routePos, this.config.stopCount);
+          const routeSegmentStart = Math.floor(routePos);
+          const stop = positiveModulo(routeSegmentStart, this.config.stopCount);
+          buses.push({
+            id: i + 1,
+            pos,
+            routePos,
+            routeSegmentStart,
+            fromStop: stop,
+            targetStop: (stop + 1) % this.config.stopCount,
+            status: i === 0 && this.config.initialDelaySec > 0 ? "dwelling" : "moving",
+            dwellRemaining: i === 0 && this.config.initialDelaySec > 0 ? this.config.initialDelaySec : 0,
+            segmentRemaining: Math.max(1, this.config.baseTravelSec * (1 - (routePos - routeSegmentStart))),
+            segmentDuration: this.config.baseTravelSec,
+            segmentIndex: 0,
+            onboard: [],
+            delaySec: i === 0 ? this.config.initialDelaySec : 0,
+            totalBlockedDelaySec: 0,
+            blockEvents: 0,
+            blockedStopId: null,
+            blockedStartTime: null,
+            blockedCurrentSec: 0,
+            serviceStopId: i === 0 ? stop : null,
+            totalDwell: 0,
+            totalSkipped: 0,
+            springConsecutiveSkips: 0,
+            springHoldStartTime: null,
+            springHoldEndTime: null,
+            lastSpringSignal: 0,
+            lastAction: "通常",
+            justSkippedStop: null
+          });
+          if (i === 0 && this.config.initialDelaySec > 0) {
+            this.occupyStop(stop, i + 1, this.config.initialDelaySec);
+          }
+          if (i !== 0 || this.config.initialDelaySec <= 0) {
+            const bus = buses[buses.length - 1];
+            this.startSegment(bus, stop, false);
+            const progress = routePos - routeSegmentStart;
+            bus.segmentRemaining = bus.segmentDuration * (1 - progress);
+            bus.routePos = routePos;
+            bus.pos = positiveModulo(routePos, this.config.stopCount);
+          }
+        }
+        return buses;
+      }
+
+      startSegment(bus, fromStop, advanceCounter = true) {
+        if (advanceCounter) bus.segmentIndex++;
+        const routeStart = Number.isFinite(bus.routePos) ? Math.floor(bus.routePos) : fromStop;
+        const circularFrom = positiveModulo(routeStart, this.config.stopCount);
+        const duration = Math.max(18, this.config.baseTravelSec + EventGenerator.travelNoise(this.config, circularFrom, this.time));
+        bus.routeSegmentStart = routeStart;
+        bus.fromStop = circularFrom;
+        bus.targetStop = positiveModulo(routeStart + 1, this.config.stopCount);
+        bus.segmentDuration = duration;
+        bus.segmentRemaining = duration;
+        bus.routePos = routeStart;
+        bus.pos = positiveModulo(bus.routePos, this.config.stopCount);
+        bus.status = "moving";
+        bus.blockedStopId = null;
+        bus.blockedStartTime = null;
+        bus.blockedCurrentSec = 0;
+        bus.serviceStopId = null;
+        bus.springHoldStartTime = null;
+        bus.springHoldEndTime = null;
+        bus.lastAction = "走行";
+      }
+
+      addArrivals(untilTime) {
+        while (this.eventIndex < this.events.length && this.events[this.eventIndex].time <= untilTime) {
+          const e = this.events[this.eventIndex++];
+          const p = {
+            id: e.id,
+            origin: e.origin,
+            dest: e.dest,
+            arrivalTime: e.time,
+            boardTime: null,
+            alightTime: null,
+            skipCount: 0,
+            firstSkipTime: null,
+            skippedAt: [],
+            deniedFullCount: 0,
+            deniedAfterSkip: 0
+          };
+          this.allPassengers.set(p.id, p);
+          this.waiting[e.origin].push(p);
+        }
+      }
+
+      step(dt) {
+        const nextTime = Math.min(this.config.durationSec, this.time + dt);
+        this.addArrivals(nextTime);
+        const actualDt = nextTime - this.time;
+        for (const bus of this.buses) {
+          bus.justSkippedStop = null;
+          if (bus.status === "dwelling") {
+            bus.dwellRemaining -= actualDt;
+            bus.delaySec += actualDt;
+            if (bus.dwellRemaining <= 0) {
+              this.releaseStop(bus.serviceStopId, bus.id);
+              this.startSegment(bus, bus.fromStop, true);
+            }
+          } else if (bus.status === "blocked") {
+            this.updateBlockedBus(bus, actualDt);
+          } else {
+            const proposedRemaining = bus.segmentRemaining - actualDt;
+            const proposedProgress = clamp(1 - proposedRemaining / bus.segmentDuration, 0, 1);
+            const proposedRoutePos = bus.routeSegmentStart + proposedProgress;
+            const maxRoutePos = this.maxRoutePosBeforeLeader(bus);
+            const cappedRoutePos = Math.min(proposedRoutePos, maxRoutePos);
+            const capped = cappedRoutePos < proposedRoutePos - 1e-6;
+            bus.routePos = cappedRoutePos;
+            bus.pos = positiveModulo(bus.routePos, this.config.stopCount);
+            const remainingRatio = clamp(bus.routeSegmentStart + 1 - bus.routePos, 0, 1);
+            bus.segmentRemaining = remainingRatio * bus.segmentDuration;
+            const idealTravel = this.config.baseTravelSec;
+            const actualTravel = this.config.baseTravelSec + Math.max(0, bus.segmentDuration - idealTravel);
+            bus.delaySec += Math.max(0, (actualTravel - idealTravel) / Math.max(1, bus.segmentDuration) * actualDt);
+            if (capped) {
+              bus.delaySec += actualDt;
+              bus.lastAction = "前車追従";
+            }
+            bus.delaySec = Math.max(0, bus.delaySec - actualDt * 0.14);
+            if (!capped && proposedRemaining <= 0) {
+              bus.routePos = bus.routeSegmentStart + 1;
+              bus.pos = bus.targetStop;
+              this.handleArrival(bus, bus.targetStop);
+            }
+          }
+        }
+        this.time = nextTime;
+        const lastSample = this.lastSampleTime ?? 0;
+        if (this.time - lastSample >= this.config.sampleIntervalSec || this.time >= this.config.durationSec) {
+          this.sample();
+        }
+      }
+
+      maxRoutePosBeforeLeader(bus) {
+        const epsilon = 0.012;
+        const ordered = [...this.buses].sort((a, b) => a.id - b.id);
+        const index = ordered.findIndex((b) => b.id === bus.id);
+        if (index < 0) return Infinity;
+        const leader = index === 0 ? ordered[ordered.length - 1] : ordered[index - 1];
+        const leaderRoutePos = index === 0 ? leader.routePos + this.config.stopCount : leader.routePos;
+        const targetRoutePos = bus.routeSegmentStart + 1;
+        const targetStop = positiveModulo(targetRoutePos, this.config.stopCount);
+        const leaderAtTargetStop = leader.status === "dwelling" && leader.serviceStopId === targetStop;
+        const berthBlockedAtTarget = this.stops[targetStop]?.occupiedByBusId != null || this.stops[targetStop]?.blockedQueue.length > 0;
+        if (targetRoutePos <= leaderRoutePos + 1e-6 && (leaderAtTargetStop || berthBlockedAtTarget)) {
+          return targetRoutePos;
+        }
+        return leaderRoutePos - epsilon;
+      }
+
+      enforceNoOvertaking() {
+        const epsilon = 0.012;
+        const ordered = [...this.buses].sort((a, b) => a.id - b.id);
+        const clampBehind = (bus, maxRoutePos) => {
+          if (!Number.isFinite(bus.routePos) || bus.routePos <= maxRoutePos) return;
+          bus.routePos = maxRoutePos;
+          bus.pos = positiveModulo(bus.routePos, this.config.stopCount);
+          if (bus.status === "moving") {
+            if (!Number.isFinite(bus.routeSegmentStart) || bus.routePos < bus.routeSegmentStart || bus.routePos > bus.routeSegmentStart + 1) {
+              bus.routeSegmentStart = Math.floor(bus.routePos);
+              bus.fromStop = positiveModulo(bus.routeSegmentStart, this.config.stopCount);
+              bus.targetStop = positiveModulo(bus.routeSegmentStart + 1, this.config.stopCount);
+            }
+            const remainingRatio = clamp(bus.routeSegmentStart + 1 - bus.routePos, 0, 1);
+            bus.segmentRemaining = Math.max(0.5, remainingRatio * bus.segmentDuration);
+          }
+        };
+        for (let pass = 0; pass < 2; pass++) {
+          for (let i = 1; i < ordered.length; i++) {
+            clampBehind(ordered[i], ordered[i - 1].routePos - epsilon);
+          }
+          clampBehind(ordered[0], ordered[ordered.length - 1].routePos + this.config.stopCount - epsilon);
+        }
+      }
+
+      handleArrival(bus, stop) {
+        const berth = this.stops[stop];
+        if (berth.occupiedByBusId !== null && berth.occupiedByBusId !== bus.id) {
+          this.enterBlocked(bus, stop);
+          return;
+        }
+        this.beginService(bus, stop);
+      }
+
+      beginService(bus, stop) {
+        this.removeFromBlockedQueue(bus, stop);
+        this.finishBlockedIfNeeded(bus, stop);
+        bus.routePos = Math.round(bus.routePos);
+        bus.pos = stop;
+        const alighting = [];
+        const staying = [];
+        for (const p of bus.onboard) {
+          if (p.dest === stop) alighting.push(p);
+          else staying.push(p);
+        }
+        bus.onboard = staying;
+        for (const p of alighting) {
+          p.alightTime = this.time;
+          this.completed.push(p);
+        }
+
+        const decision = this.controlDecision(bus, stop, alighting.length);
+        let boarded = 0;
+        let deniedByFull = 0;
+        if (decision.skip) {
+          const skippedNow = this.waiting[stop].length;
+          for (const p of this.waiting[stop]) {
+            p.skipCount++;
+            if (p.firstSkipTime == null) p.firstSkipTime = this.time;
+            p.skippedAt.push({ time: this.time, stop, busId: bus.id });
+          }
+          bus.totalSkipped += skippedNow;
+          bus.lastAction = decision.assist ? (skippedNow ? `補助スキップ ${skippedNow}人` : "補助通過") : (skippedNow ? `降車のみ ${skippedNow}人後続へ` : "通過");
+          bus.justSkippedStop = stop;
+          if (decision.assist) {
+            bus.springConsecutiveSkips++;
+            this.springSkipAssistEvents++;
+          }
+          this.skipLog.push({ time: this.time, stop, busId: bus.id, passengers: skippedNow, reason: decision.reason, assist: !!decision.assist });
+        } else {
+          bus.springConsecutiveSkips = 0;
+          const queue = this.waiting[stop];
+          const capacityLeft = this.config.capacity - bus.onboard.length;
+          const boardCount = clamp(capacityLeft, 0, queue.length);
+          for (let i = 0; i < boardCount; i++) {
+            const p = queue.shift();
+            p.boardTime = this.time;
+            bus.onboard.push(p);
+            boarded++;
+          }
+          if (queue.length > 0) {
+            deniedByFull = queue.length;
+            for (const p of queue) {
+              p.deniedFullCount++;
+              if (p.skipCount > 0) p.deniedAfterSkip++;
+            }
+            this.fullPassLog.push({ time: this.time, stop, busId: bus.id, passengers: deniedByFull });
+          }
+          bus.lastAction = boarded || alighting.length ? `乗${boarded} 降${alighting.length}` : "停車短";
+        }
+
+        const baseDwell = this.calculateDwellTime(bus, boarded, alighting.length, decision.skip);
+        const holdSec = Math.max(0, decision.holdSec || 0);
+        const dwell = baseDwell + holdSec;
+        if (holdSec > 0) {
+          bus.lastAction = `スプリング保持 ${fmt(holdSec,0)}秒`;
+          bus.springHoldStartTime = this.time + baseDwell;
+          bus.springHoldEndTime = this.time + dwell;
+          this.totalSpringHoldSec += holdSec;
+          this.maxSpringHoldSec = Math.max(this.maxSpringHoldSec, holdSec);
+          this.springHoldLog.push({ time: this.time, stop, busId: bus.id, holdSec, signal: decision.springSignal, hFront: decision.hFront, hBack: decision.hBack });
+        }
+        bus.totalDwell += dwell;
+        this.totalDwell += dwell;
+        bus.fromStop = stop;
+        bus.routePos = Math.round(bus.routePos);
+        bus.routeSegmentStart = bus.routePos;
+        bus.pos = stop;
+        if (dwell > 0) {
+          this.occupyStop(stop, bus.id, dwell);
+          bus.status = "dwelling";
+          bus.dwellRemaining = dwell;
+          bus.serviceStopId = stop;
+        } else {
+          this.startSegment(bus, stop, true);
+        }
+      }
+
+      calculateDwellTime(bus, boarded, alighted, skip) {
+        if (boarded === 0 && alighted === 0) return 0;
+        if (skip && alighted === 0) return 0;
+        const loadRatio = bus.onboard.length / Math.max(1, this.config.capacity);
+        const crowdedExtra = loadRatio >= this.config.crowdingThreshold ? this.config.crowdedExtraSec : 0;
+        const boardingProcess = boarded > 0
+          ? this.config.boardingSetupSec + crowdedExtra + boarded * this.config.boardTimeSec
+          : 0;
+        const alightingProcess = alighted > 0
+          ? this.config.alightingSetupSec + crowdedExtra + alighted * this.config.alightTimeSec
+          : 0;
+        const passengerProcess = boardingProcess + alightingProcess;
+        return this.config.stopManeuverLossSec + this.config.doorTimeSec + passengerProcess;
+      }
+
+      occupyStop(stopId, busId, dwellSec) {
+        const stop = this.stops[stopId];
+        stop.occupiedByBusId = busId;
+        stop.serviceEndTime = this.time + dwellSec;
+        stop.totalOccupiedSec += dwellSec;
+      }
+
+      releaseStop(stopId, busId) {
+        if (stopId == null) return;
+        const stop = this.stops[stopId];
+        if (stop && stop.occupiedByBusId === busId) {
+          stop.occupiedByBusId = null;
+          stop.serviceEndTime = this.time;
+        }
+      }
+
+      enterBlocked(bus, stopId) {
+        const stop = this.stops[stopId];
+        if (!stop.blockedQueue.includes(bus.id)) {
+          stop.blockedQueue.push(bus.id);
+          stop.maxQueue = Math.max(stop.maxQueue, stop.blockedQueue.length);
+        }
+        bus.status = "blocked";
+        bus.blockedStopId = stopId;
+        bus.blockedStartTime = this.time;
+        bus.blockedCurrentSec = 0;
+        bus.segmentRemaining = 0;
+        bus.routePos = Math.round(bus.routePos) - 0.08;
+        bus.pos = positiveModulo(bus.routePos, this.config.stopCount);
+        bus.lastAction = "前車待ち";
+      }
+
+      updateBlockedBus(bus, dt) {
+        const stop = this.stops[bus.blockedStopId];
+        if (!stop) return;
+        if (stop.occupiedByBusId === null && stop.blockedQueue[0] === bus.id) {
+          this.beginService(bus, bus.blockedStopId);
+          return;
+        }
+        bus.blockedCurrentSec += dt;
+        bus.totalBlockedDelaySec += dt;
+        bus.delaySec += dt;
+        this.totalBlockedDelaySec += dt;
+        stop.totalBlockedDelaySec += dt;
+      }
+
+      removeFromBlockedQueue(bus, stopId) {
+        const stop = this.stops[stopId];
+        if (!stop) return;
+        const index = stop.blockedQueue.indexOf(bus.id);
+        if (index >= 0) stop.blockedQueue.splice(index, 1);
+      }
+
+      finishBlockedIfNeeded(bus, stopId) {
+        if (bus.blockedStartTime == null) return;
+        const duration = Math.max(0, this.time - bus.blockedStartTime);
+        const stop = this.stops[stopId];
+        bus.blockEvents++;
+        this.blockEvents++;
+        this.maxBlockedSec = Math.max(this.maxBlockedSec, duration);
+        if (stop) {
+          stop.blockEvents++;
+          stop.maxBlockedSec = Math.max(stop.maxBlockedSec, duration);
+        }
+        this.blockLog.push({ time: this.time, stop: stopId, busId: bus.id, duration });
+        bus.blockedStartTime = null;
+        bus.blockedCurrentSec = 0;
+        bus.blockedStopId = null;
+      }
+
+      controlDecision(bus, stop, alightingCount = 0) {
+        if (!this.controlEnabled) return { skip: false, holdSec: 0, reason: "control off" };
+        if (this.springEnabled) return this.springDecision(bus, stop, alightingCount);
+        return this.distanceSkipDecision(bus, stop, alightingCount, false);
+      }
+
+      distanceSkipDecision(bus, stop, alightingCount = 0, assist = false) {
+        if (this.waiting[stop].length === 0 && alightingCount === 0) return { skip: false, holdSec: 0, reason: "no demand" };
+        if (this.config.forbiddenStops.includes(stop)) return { skip: false, holdSec: 0, reason: "forbidden stop" };
+        if (bus.delaySec < this.config.delayThresholdMin * 60) return { skip: false, holdSec: 0, reason: "delay small" };
+        const follower = this.findFollower(bus);
+        if (!follower) return { skip: false, holdSec: 0, reason: "no follower" };
+        const followerLoad = follower.onboard.length / this.config.capacity;
+        if (followerLoad > this.config.followerLoadLimit) return { skip: false, holdSec: 0, reason: "follower crowded" };
+        const distanceBehind = this.routeDistanceBehind(follower, bus);
+        const distanceOk = distanceBehind <= this.config.distanceThresholdStops;
+        return { skip: distanceOk, holdSec: 0, assist, reason: `behind=${distanceBehind.toFixed(2)}` };
+      }
+
+      springDecision(bus, stop, alightingCount = 0) {
+        const ctx = this.headwayContext(bus);
+        bus.lastSpringSignal = ctx.springSignal;
+        this.springSignalLog.push({ time: this.time, busId: bus.id, stop, ...ctx });
+        const H = ctx.idealHeadwayStops;
+        const deadband = this.config.springDeadbandStops;
+        const holdCandidate = ctx.springSignal < -deadband && ctx.hFront < H && ctx.hBack > H;
+        if (holdCandidate) {
+          const holdSec = clamp(
+            (-ctx.springSignal - deadband) * this.config.springGainSecPerStop - this.config.springDamping * bus.delaySec,
+            0,
+            this.config.springMaxHoldSec
+          );
+          if (holdSec >= this.config.springMinHoldSec) {
+            return { skip: false, holdSec, reason: `spring hold signal=${ctx.springSignal.toFixed(2)}`, springSignal: ctx.springSignal, hFront: ctx.hFront, hBack: ctx.hBack };
+          }
+        }
+        const skipCandidate = ctx.springSignal > Math.max(deadband, 0.5) && ctx.hFront > H && ctx.hBack < H;
+        if (!skipCandidate) return { skip: false, holdSec: 0, reason: `spring neutral signal=${ctx.springSignal.toFixed(2)}` };
+        const baseDecision = this.distanceSkipDecision(bus, stop, alightingCount, true);
+        if (!baseDecision.skip) return { ...baseDecision, assist: false };
+        if (!this.springSkipImprovesHeadway(bus, stop, alightingCount)) {
+          return { skip: false, holdSec: 0, reason: "spring headway cost" };
+        }
+        return { ...baseDecision, assist: true, reason: `${baseDecision.reason} spring=${ctx.springSignal.toFixed(2)}`, springSignal: ctx.springSignal, hFront: ctx.hFront, hBack: ctx.hBack };
+      }
+
+      headwayContext(bus) {
+        const leader = this.findLeader(bus);
+        const follower = this.findFollower(bus);
+        const hFront = leader ? this.routeDistanceAhead(bus, leader) : this.config.stopCount;
+        const hBack = follower ? this.routeDistanceBehind(follower, bus) : this.config.stopCount;
+        const idealHeadwayStops = this.config.stopCount / this.config.busCount;
+        return { leaderId: leader?.id ?? null, followerId: follower?.id ?? null, hFront, hBack, idealHeadwayStops, springSignal: hFront - hBack };
+      }
+
+      springSkipImprovesHeadway(bus, stop, alightingCount) {
+        const capacityLeft = Math.max(0, this.config.capacity - bus.onboard.length);
+        const boardedIfNormal = Math.min(capacityLeft, this.waiting[stop].length);
+        const savedDwell = this.calculateDwellTime(bus, boardedIfNormal, alightingCount, false);
+        const forwardStops = clamp(savedDwell / Math.max(1, this.config.baseTravelSec), 0, this.config.stopCount / 2);
+        if (forwardStops <= 0) return true;
+        const currentCost = this.headwayErrorCost();
+        const nextCost = this.headwayErrorCost(bus.id, forwardStops);
+        return nextCost < currentCost;
+      }
+
+      headwayErrorCost(busId = null, forwardStops = 0) {
+        const ideal = this.config.stopCount / this.config.busCount;
+        const positions = this.buses.map((b) => positiveModulo(b.pos + (b.id === busId ? forwardStops : 0), this.config.stopCount)).sort((a, b) => a - b);
+        const gaps = [];
+        for (let i = 0; i < positions.length; i++) {
+          const next = positions[(i + 1) % positions.length];
+          gaps.push((next - positions[i] + this.config.stopCount) % this.config.stopCount);
+        }
+        return sum(gaps.map((h) => (h - ideal) ** 2));
+      }
+
+      findFollower(bus) {
+        let best = null;
+        let bestDist = Infinity;
+        for (const other of this.buses) {
+          if (other.id === bus.id) continue;
+          const dist = this.routeDistanceBehind(other, bus);
+          if (dist > 0.01 && dist < bestDist) {
+            best = other;
+            bestDist = dist;
+          }
+        }
+        return best;
+      }
+
+      findLeader(bus) {
+        let best = null;
+        let bestDist = Infinity;
+        for (const other of this.buses) {
+          if (other.id === bus.id) continue;
+          const dist = this.routeDistanceAhead(bus, other);
+          if (dist > 0.01 && dist < bestDist) {
+            best = other;
+            bestDist = dist;
+          }
+        }
+        return best;
+      }
+
+      routeDistanceAhead(bus, leader) {
+        let dist = leader.routePos - bus.routePos;
+        while (dist <= 0) dist += this.config.stopCount;
+        return dist;
+      }
+
+      routeDistanceBehind(follower, leader) {
+        let dist = leader.routePos - follower.routePos;
+        while (dist <= 0) dist += this.config.stopCount;
+        return dist;
+      }
+
+      absoluteStopAhead(bus, stop) {
+        const lap = Math.floor(bus.routePos / this.config.stopCount);
+        let target = lap * this.config.stopCount + stop;
+        while (target < bus.routePos - 1e-6) target += this.config.stopCount;
+        return target;
+      }
+
+      estimateEtaToStop(bus, stop) {
+        const distance = this.absoluteStopAhead(bus, stop) - bus.routePos;
+        const movingPart = distance * this.config.baseTravelSec;
+        const dwellPart = bus.status === "dwelling" ? Math.max(0, bus.dwellRemaining) : 0;
+        return dwellPart + movingPart;
+      }
+
+      headways() {
+        const pos = this.buses.map((b) => b.pos).sort((a, b) => a - b);
+        const gaps = [];
+        for (let i = 0; i < pos.length; i++) {
+          const next = pos[(i + 1) % pos.length];
+          gaps.push((next - pos[i] + this.config.stopCount) % this.config.stopCount);
+        }
+        return gaps;
+      }
+
+      sample() {
+        if (this.lastSampleTime === this.time && this.history.length) return;
+        const metrics = this.computeMetrics();
+        const deltaSec = this.lastSampleTime == null ? 0 : Math.max(0, this.time - this.lastSampleTime);
+        const isBunched = metrics.minHeadwayStops < metrics.idealHeadwayStops * 0.3 || metrics.closePairs > 0;
+        if (isBunched) {
+          this.bunchDuration += deltaSec;
+          this.blockedDuringBunchSec += metrics.activeBlockedBuses * deltaSec;
+          if (!this.bunchActive) this.bunchStarts++;
+        }
+        this.bunchActive = isBunched;
+        this.closePairEvents += metrics.closePairs;
+        metrics.bunchStarts = this.bunchStarts;
+        metrics.bunchDurationMin = this.bunchDuration / 60;
+        metrics.blockedDuringBunchMin = this.blockedDuringBunchSec / 60;
+        this.lastSnapshot = metrics;
+        this.history.push({
+          t: this.time,
+          bunchScore: metrics.bunchScore,
+          avgWaitMin: metrics.avgWaitMin,
+          p95WaitMin: metrics.p95WaitMin,
+          avgTotalMin: metrics.avgTotalMin,
+          p95TotalMin: metrics.p95TotalMin,
+          recentAvgWaitMin: metrics.recentAvgWaitMin,
+          recentP95WaitMin: metrics.recentP95WaitMin,
+          minHeadwayStops: metrics.minHeadwayStops,
+          maxHeadwayStops: metrics.maxHeadwayStops,
+          headwayRmseStops: metrics.headwayRmseStops,
+          skipAvgExtraMin: metrics.skipAvgExtraMin,
+          skipMaxExtraMin: metrics.skipMaxExtraMin,
+          totalSpringHoldMin: metrics.totalSpringHoldMin,
+          springInterventionCount: metrics.springInterventionCount,
+          totalBlockedDelayMin: metrics.totalBlockedDelayMin,
+          activeBlockedBuses: metrics.activeBlockedBuses,
+          blockedDuringBunchMin: metrics.blockedDuringBunchMin,
+          onboardByBus: this.buses.map((b) => b.onboard.length)
+        });
+        this.lastSampleTime = this.time;
+      }
+
+      computeMetrics() {
+        const waits = this.completed.filter((p) => p.boardTime != null).map((p) => (p.boardTime - p.arrivalTime) / 60);
+        const recentStart = Math.max(0, this.time - this.config.waitWindowSec);
+        const recentWaits = this.completed
+          .filter((p) => p.boardTime != null && p.boardTime > recentStart && p.boardTime <= this.time)
+          .map((p) => (p.boardTime - p.arrivalTime) / 60);
+        const rides = this.completed.map((p) => (p.alightTime - p.boardTime) / 60).filter(Number.isFinite);
+        const totals = this.completed.map((p) => (p.alightTime - p.arrivalTime) / 60).filter(Number.isFinite);
+        const skipped = [...this.allPassengers.values()].filter((p) => p.skipCount > 0);
+        const skippedBoarded = skipped.filter((p) => p.boardTime != null && p.firstSkipTime != null);
+        const skipExtra = skippedBoarded.map((p) => (p.boardTime - p.firstSkipTime) / 60);
+        const headways = this.headways();
+        const ideal = this.config.stopCount / this.config.busCount;
+        const minHw = Math.min(...headways);
+        const maxHw = Math.max(...headways);
+        const cv = mean(headways) ? std(headways) / mean(headways) : 0;
+        const headwayErrors = headways.map((h) => h - ideal);
+        const headwayErrorSum = sum(headwayErrors.map((e) => e * e));
+        const headwayRmseStops = Math.sqrt(headwayErrorSum / Math.max(1, headwayErrors.length));
+        const closePairs = headways.filter((h) => h <= 1).length;
+        const minRatio = minHw / Math.max(0.01, ideal);
+        const closeSeverity = mean(headways.map((h) => clamp((ideal * 0.55 - h) / (ideal * 0.55), 0, 1)));
+        const cvScore = clamp(cv / 1.35, 0, 1) * 45;
+        const minScore = clamp((0.65 - minRatio) / 0.65, 0, 1) * 35;
+        const closeScore = closeSeverity * 20;
+        const bunchScore = clamp(cvScore + minScore + closeScore, 0, 100);
+        const loadByBus = this.buses.map((b) => b.onboard.length);
+        const delayByBus = this.buses.map((b) => b.delaySec / 60);
+        const uniqueDenied = [...this.allPassengers.values()].filter((p) => p.deniedFullCount > 0).length;
+        const deniedAfterSkip = [...this.allPassengers.values()].filter((p) => p.deniedAfterSkip > 0).length;
+        const stopBlockedDelayMins = this.stops.map((s) => s.totalBlockedDelaySec / 60);
+        const stopOccupiedMins = this.stops.map((s) => s.totalOccupiedSec / 60);
+        const stopOccupancyRates = this.stops.map((s) => this.time > 0 ? s.totalOccupiedSec / this.time : 0);
+        const stopBlockEvents = this.stops.map((s) => s.blockEvents);
+        const stopMaxQueues = this.stops.map((s) => s.maxQueue);
+        const activeBlockedBuses = this.buses.filter((b) => b.status === "blocked").length;
+        const signals = this.springSignalLog.map((row) => row.springSignal).filter(Number.isFinite);
+        const positiveSignals = signals.filter((v) => v > 0);
+        const negativeSignals = signals.filter((v) => v < 0);
+        const springHoldEvents = this.springHoldLog.length;
+        return {
+          timeMin: this.time / 60,
+          completed: this.completed.length,
+          waitingNow: sum(this.waiting.map((q) => q.length)),
+          avgWaitMin: mean(waits),
+          recentAvgWaitMin: recentWaits.length ? mean(recentWaits) : NaN,
+          recentP95WaitMin: recentWaits.length ? pct(recentWaits, 95) : NaN,
+          recentBoardedPassengers: recentWaits.length,
+          medianWaitMin: pct(waits, 50),
+          p95WaitMin: pct(waits, 95),
+          maxWaitMin: waits.length ? Math.max(...waits) : 0,
+          over10Min: waits.filter((w) => w >= 10).length,
+          avgRideMin: mean(rides),
+          avgTotalMin: mean(totals),
+          p95TotalMin: pct(totals, 95),
+          skippedPassengers: skipped.length,
+          skipEvents: this.skipLog.length,
+          skipAvgExtraMin: mean(skipExtra),
+          skipMaxExtraMin: skipExtra.length ? Math.max(...skipExtra) : 0,
+          multiSkippedPassengers: skipped.filter((p) => p.skipCount >= 2).length,
+          deniedAfterSkip,
+          fullPassEvents: this.fullPassLog.length,
+          uniqueDeniedFull: uniqueDenied,
+          headwayStdStops: std(headways),
+          idealHeadwayStops: ideal,
+          minHeadwayStops: minHw,
+          maxHeadwayStops: maxHw,
+          headwayErrorSum,
+          headwayRmseStops,
+          headwayCv: cv,
+          closePairs,
+          bunchScore,
+          bunchStarts: this.bunchStarts,
+          bunchDurationMin: this.bunchDuration / 60,
+          avgDelayMin: mean(delayByBus),
+          maxDelayMin: delayByBus.length ? Math.max(...delayByBus) : 0,
+          loadStd: std(loadByBus),
+          totalDwellMin: this.totalDwell / 60,
+          totalSkips: sum(this.buses.map((b) => b.totalSkipped)),
+          springHoldEvents,
+          totalSpringHoldMin: this.totalSpringHoldSec / 60,
+          avgSpringHoldSec: springHoldEvents ? this.totalSpringHoldSec / springHoldEvents : 0,
+          maxSpringHoldSec: this.maxSpringHoldSec,
+          springSkipAssistEvents: this.springSkipAssistEvents,
+          springInterventionCount: springHoldEvents + this.springSkipAssistEvents,
+          springPositiveSignalAvg: positiveSignals.length ? mean(positiveSignals) : 0,
+          springNegativeSignalAvg: negativeSignals.length ? mean(negativeSignals) : 0,
+          springSignalAbsAvg: signals.length ? mean(signals.map((v) => Math.abs(v))) : 0,
+          totalBlockedDelayMin: this.totalBlockedDelaySec / 60,
+          avgBlockedDelayPerBusMin: this.totalBlockedDelaySec / 60 / Math.max(1, this.config.busCount),
+          blockEvents: this.blockEvents,
+          avgBlockDurationMin: this.blockEvents ? (this.totalBlockedDelaySec / this.blockEvents / 60) : 0,
+          maxBlockedDelayMin: this.maxBlockedSec / 60,
+          activeBlockedBuses,
+          stopBlockedDelayMins,
+          stopBlockEvents,
+          stopMaxQueues,
+          stopOccupiedMins,
+          stopOccupancyRates,
+          totalStopOccupiedMin: sum(stopOccupiedMins),
+          avgStopOccupancyRate: mean(stopOccupancyRates),
+          blockedDuringBunchMin: this.blockedDuringBunchSec / 60
+        };
+      }
+
+      runToEnd(maxSteps = 20000) {
+        let steps = 0;
+        while (this.time < this.config.durationSec && steps < maxSteps) {
+          this.step(1);
+          steps++;
+        }
+        if (this.lastSampleTime !== this.time) this.sample();
+        return this.computeMetrics();
+      }
+    }
+
+    class ComparisonApp {
+      constructor() {
+        this.config = normalizeConfig(PRESETS.urban);
+        this.demandEvents = [];
+        this.plain = null;
+        this.skip = null;
+        this.spring = null;
+        this.activeResultView = "animation";
+        this.seedAverageResult = null;
+        this.seedAverageAbortRequested = false;
+        this.running = false;
+        this.speed = Number($("speedRange").value);
+        this.lastFrame = 0;
+        this.initUi();
+        this.reset();
+        requestAnimationFrame((ts) => this.loop(ts));
+      }
+
+      initUi() {
+        for (const [key, preset] of Object.entries(PRESETS)) {
+          const opt = document.createElement("option");
+          opt.value = key;
+          opt.textContent = preset.name;
+          $("presetSelect").appendChild(opt);
+        }
+        $("presetSelect").value = "urban";
+        applyConfigToInputs(this.config);
+        this.setSettingsDirty(false);
+        $("playBtn").addEventListener("click", () => this.toggleRun());
+        $("stepBtn").addEventListener("click", () => { this.step(10); this.render(); });
+        $("resetBtn").addEventListener("click", () => this.reset());
+        $("applyBtn").addEventListener("click", () => {
+          this.config = buildConfigFromInputs();
+          this.setSettingsDirty(false);
+          this.reset();
+        });
+        $("randomSeedBtn").addEventListener("click", () => {
+          $("seedInput").value = Math.floor(Math.random() * 999999) + 1;
+          this.config = buildConfigFromInputs();
+          this.setSettingsDirty(false);
+          this.reset();
+        });
+        $("presetSelect").addEventListener("change", () => {
+          this.config = normalizeConfig(PRESETS[$("presetSelect").value]);
+          applyConfigToInputs(this.config);
+          this.setSettingsDirty(false);
+          this.reset();
+        });
+        $("settingsPanel").querySelectorAll("input, select").forEach((el) => {
+          if (el.id === "presetSelect") return;
+          el.addEventListener("input", () => this.setSettingsDirty(true));
+          el.addEventListener("change", () => this.setSettingsDirty(true));
+        });
+        $("speedRange").addEventListener("input", () => {
+          this.speed = Number($("speedRange").value);
+          $("speedLabel").textContent = `${this.speed}x`;
+        });
+        $("exportJsonBtn").addEventListener("click", () => this.exportJson());
+        $("exportCsvBtn").addEventListener("click", () => this.exportCsv());
+        $("exportConfigBtn").addEventListener("click", () => this.exportConfig());
+        $("importConfigBtn").addEventListener("click", () => $("configFileInput").click());
+        $("configFileInput").addEventListener("change", (event) => this.importConfigFile(event));
+        $("animationTab").addEventListener("click", () => this.setResultView("animation"));
+        $("seedAverageTab").addEventListener("click", () => this.setResultView("seedAverage"));
+        $("multiSeedBtn").addEventListener("click", () => this.setResultView("seedAverage"));
+        $("seedAverageRunBtn").addEventListener("click", () => this.runSeedAverage());
+        $("seedAverageCancelBtn").addEventListener("click", () => {
+          this.seedAverageAbortRequested = true;
+          $("seedAverageStatus").textContent = "中止要求中";
+        });
+        $("seedAverageExportJsonBtn").addEventListener("click", () => this.exportSeedAverageJson());
+        $("seedAverageExportCsvBtn").addEventListener("click", () => this.exportSeedAverageCsv());
+        $("seedAverageRandomBtn").addEventListener("click", () => {
+          $("seedAverageBaseSeedInput").value = Math.floor(Math.random() * 999999) + 1;
+          this.onSeedAverageParamInput();
+        });
+        $("seedAverageSyncBtn").addEventListener("click", () => {
+          this.syncSeedAverageControls(true);
+          this.renderSeedAveragePreview();
+        });
+        $("seedAverageBaseSeedInput").addEventListener("input", () => this.onSeedAverageParamInput());
+        $("seedAverageCountInput").addEventListener("input", () => this.onSeedAverageParamInput());
+        $("sweepBtn").addEventListener("click", () => this.runSweep());
+        applyParameterHelp();
+        this.syncSeedAverageControls(true);
+        this.renderSeedAveragePreview();
+      }
+
+      setResultView(view) {
+        this.activeResultView = view;
+        if (view === "seedAverage") {
+          this.syncSeedAverageControls(false);
+          this.renderSeedAveragePreview();
+        }
+        $("animationTab").classList.toggle("active", view === "animation");
+        $("animationTab").setAttribute("aria-selected", view === "animation" ? "true" : "false");
+        $("seedAverageTab").classList.toggle("active", view === "seedAverage");
+        $("seedAverageTab").setAttribute("aria-selected", view === "seedAverage" ? "true" : "false");
+        this.render();
+      }
+
+      clearSeedAverageResult() {
+        this.seedAverageResult = null;
+        this.activeResultView = "animation";
+        $("animationTab").classList.add("active");
+        $("animationTab").setAttribute("aria-selected", "true");
+        $("seedAverageTab").classList.remove("active");
+        $("seedAverageTab").setAttribute("aria-selected", "false");
+        $("seedAverageStatus").textContent = "未実行";
+        $("seedAverageStatus").className = "experiment-status";
+        $("seedAverageModeBadge").textContent = "未計算";
+        $("seedAverageModeBadge").className = "badge";
+        $("seedAverageCancelBtn").hidden = true;
+        this.syncSeedAverageControls(true);
+        this.renderSeedAveragePreview();
+        $("experimentOutput").textContent = "アニメーションとは別に高速計算します。";
+      }
+
+      syncSeedAverageControls(force = false) {
+        const baseInput = $("seedAverageBaseSeedInput");
+        if (!baseInput) return;
+        if (force || document.activeElement !== baseInput) {
+          baseInput.value = Number($("seedInput").value) || this.config.seed;
+        }
+      }
+
+      seedAverageSeeds() {
+        const baseSeed = Math.max(1, Number.parseInt($("seedAverageBaseSeedInput").value, 10) || this.config.seed || 1);
+        const count = clamp(Number.parseInt($("seedAverageCountInput").value, 10) || 200, 1, 100000);
+        return {
+          baseSeed,
+          count,
+          seeds: Array.from({ length: count }, (_, i) => baseSeed + 101 * i)
+        };
+      }
+
+      renderSeedAveragePreview() {
+        const { baseSeed, count, seeds } = this.seedAverageSeeds();
+        $("seedAverageBaseSeedInput").value = baseSeed;
+        $("seedAverageCountInput").value = count;
+        $("seedAverageCountBadge").textContent = `${count} seeds`;
+        const warning = count >= 10000 ? " 大量計算のため時間がかかります。実行中は中止できます。" : "";
+        $("seedAverageSeeds").textContent = `使用予定シード: ${formatSeedList(seeds, 12)}${warning}`;
+        $("seedAverageUsedSeeds").textContent = this.seedAverageResult
+          ? `直近の計算シード: ${formatSeedList(this.seedAverageResult.seeds)}`
+          : "まだシード平均は実行されていません。条件を確認して実行してください。";
+      }
+
+      onSeedAverageParamInput() {
+        this.renderSeedAveragePreview();
+        if (this.seedAverageResult) {
+          $("seedAverageStatus").textContent = "条件変更あり";
+          $("seedAverageStatus").className = "experiment-status running";
+          $("seedAverageModeBadge").textContent = "再実行推奨";
+          $("seedAverageModeBadge").className = "badge yellow";
+        }
+      }
+
+      setSettingsDirty(dirty) {
+        const el = $("settingsState");
+        if (!el) return;
+        el.textContent = dirty ? "未反映" : "反映済み";
+        el.classList.toggle("dirty", dirty);
+      }
+
+      reset() {
+        this.clearSeedAverageResult();
+        this.running = false;
+        $("playBtn").textContent = "再生";
+        this.demandEvents = EventGenerator.demandEvents(this.config);
+        this.plain = new Simulation({ ...this.config, controlMode: "none" }, "plain", this.demandEvents);
+        this.skip = new Simulation({ ...this.config, controlMode: "skip" }, "skip", this.demandEvents);
+        this.spring = new Simulation({ ...this.config, controlMode: "spring" }, "spring", this.demandEvents);
+        this.plain.sample();
+        this.skip.sample();
+        this.spring.sample();
+        this.render();
+      }
+
+      toggleRun() {
+        this.running = !this.running;
+        $("playBtn").textContent = this.running ? "一時停止" : "再生";
+      }
+
+      loop(ts) {
+        if (!this.lastFrame) this.lastFrame = ts;
+        const elapsed = Math.min(0.08, (ts - this.lastFrame) / 1000);
+        this.lastFrame = ts;
+        if (this.running) {
+          this.step(elapsed * this.speed);
+          this.render();
+          if (this.plain.time >= this.config.durationSec) {
+            this.running = false;
+            $("playBtn").textContent = "再生";
+          }
+        }
+        requestAnimationFrame((next) => this.loop(next));
+      }
+
+      step(seconds) {
+        const target = Math.min(this.config.durationSec, this.plain.time + seconds);
+        while (this.plain.time < target) {
+          const dt = Math.min(1, target - this.plain.time);
+          this.plain.step(dt);
+          this.skip.step(dt);
+          this.spring.step(dt);
+        }
+      }
+
+      render() {
+        const plainM = this.plain.computeMetrics();
+        const skipM = this.skip.computeMetrics();
+        const springM = this.spring.computeMetrics();
+        $("clockBadge").textContent = this.timeText(this.plain.time);
+        $("seedBadge").textContent = `seed ${this.config.seed}`;
+        $("plainBunchBadge").textContent = `団子度 ${Math.round(plainM.bunchScore)}`;
+        $("skipBunchBadge").textContent = `団子度 ${Math.round(skipM.bunchScore)}`;
+        $("springBunchBadge").textContent = `団子度 ${Math.round(springM.bunchScore)}`;
+        $("routePanel").hidden = this.activeResultView !== "animation";
+        $("seedAverageInfoPanel").hidden = this.activeResultView !== "seedAverage";
+        if (this.activeResultView === "seedAverage") {
+          this.renderSeedAveragePreview();
+          if (this.seedAverageResult) {
+            $("seedAverageCountBadge").textContent = `${this.seedAverageResult.seeds.length} seeds`;
+            $("seedAverageUsedSeeds").textContent = `使用シード: ${formatSeedList(this.seedAverageResult.seeds)}`;
+            this.renderResultData(this.seedAverageResult);
+          } else {
+            this.renderSeedAverageEmpty();
+          }
+          return;
+        }
+        this.renderRoute($("plainRoute"), this.plain, plainM);
+        this.renderRoute($("skipRoute"), this.skip, skipM);
+        this.renderRoute($("springRoute"), this.spring, springM);
+        $("plainMini").innerHTML = this.miniHtml(plainM);
+        $("skipMini").innerHTML = this.miniHtml(skipM);
+        $("springMini").innerHTML = this.miniHtml(springM);
+        this.renderResultData({
+          plainMetrics: plainM,
+          skipMetrics: skipM,
+          springMetrics: springM,
+          plainHistory: this.plain.history,
+          skipHistory: this.skip.history,
+          springHistory: this.spring.history,
+          stopCount: this.config.stopCount,
+          durationMin: this.config.durationMin
+        });
+      }
+
+      renderResultData(data) {
+        this.renderSummary(data.plainMetrics, data.skipMetrics, data.springMetrics);
+        this.renderCharts(data);
+        this.renderComments(data.plainMetrics, data.skipMetrics, data.springMetrics);
+        this.renderDetails(data.plainMetrics, data.skipMetrics, data.springMetrics, data.plainSd, data.skipSd, data.springSd, data.stopCount);
+      }
+
+      renderSeedAverageEmpty() {
+        const { baseSeed, count, seeds } = this.seedAverageSeeds();
+        $("summary").innerHTML = [
+          this.metric("表示モード", "シード平均", "複数シードをまとめて評価します", "warn"),
+          this.metric("平均シード数", `${count}`, `基準 ${baseSeed} / 間隔 101`, "warn"),
+          this.metric("使用予定", `${seeds.length}`, `${seeds[0]} → ${seeds[seeds.length - 1]}`, "warn"),
+          this.metric("結果", "未実行", "実行後に平均値とSDを表示します", "warn"),
+          this.metric("アニメーション", "非表示", "平均バス位置は定義しません", "warn"),
+          this.metric("エクスポート", "対応", "実行後にシード平均JSON/CSVを保存できます", "warn")
+        ].join("");
+        this.clearCharts("シード平均を実行すると表示されます");
+        $("comments").innerHTML = [
+          `<div class="line warn">シード平均は、単一シードの偶然に左右される結果をならすためのビューです。基準シードと件数を決めて実行してください。</div>`,
+          `<div class="line warn">実行後は、3方式のサマリー、グラフ、詳細指標に加えて、主要指標のSDを確認できます。</div>`
+        ].join("");
+        $("detailsTable").innerHTML = `<div class="empty-result">シード平均は未実行です。上の「シード平均を実行」を押すと、ここに平均指標とSDが表示されます。</div>`;
+      }
+
+      renderSummary(p, s, g) {
+        const improve = (m, key) => p[key] > 0 ? (p[key] - m[key]) / p[key] * 100 : 0;
+        const waitSkip = improve(s, "avgWaitMin");
+        const waitSpring = improve(g, "avgWaitMin");
+        const totalSkip = improve(s, "avgTotalMin");
+        const totalSpring = improve(g, "avgTotalMin");
+        const bunchSkip = improve(s, "bunchScore");
+        const bunchSpring = improve(g, "bunchScore");
+        const rmseSkip = improve(s, "headwayRmseStops");
+        const rmseSpring = improve(g, "headwayRmseStops");
+        const blockedSkip = improve(s, "totalBlockedDelayMin");
+        const blockedSpring = improve(g, "totalBlockedDelayMin");
+        const springCaution = g.skipMaxExtraMin > 6 || g.multiSkippedPassengers > 0 || g.deniedAfterSkip > 0 || g.totalSpringHoldMin > 18;
+        $("summary").innerHTML = [
+          this.metric("待ち時間改善", `S ${fmt(waitSkip,0)}% / Sp ${fmt(waitSpring,0)}%`, `なし ${fmt(p.avgWaitMin)} / スキップ ${fmt(s.avgWaitMin)} / スプリング ${fmt(g.avgWaitMin)} 分`, Math.max(waitSkip, waitSpring) > 5 ? "good" : Math.max(waitSkip, waitSpring) < -3 ? "bad" : "warn"),
+          this.metric("総所要時間改善", `S ${fmt(totalSkip,0)}% / Sp ${fmt(totalSpring,0)}%`, `なし ${fmt(p.avgTotalMin)} / スキップ ${fmt(s.avgTotalMin)} / スプリング ${fmt(g.avgTotalMin)} 分`, Math.max(totalSkip, totalSpring) > 5 ? "good" : Math.max(totalSkip, totalSpring) < -3 ? "bad" : "warn"),
+          this.metric("団子削減", `S ${fmt(bunchSkip,0)}% / Sp ${fmt(bunchSpring,0)}%`, `団子度 ${fmt(p.bunchScore,0)} → ${fmt(s.bunchScore,0)} / ${fmt(g.bunchScore,0)}`, Math.max(bunchSkip, bunchSpring) > 8 ? "good" : "warn"),
+          this.metric("RMSE改善", `S ${fmt(rmseSkip,0)}% / Sp ${fmt(rmseSpring,0)}%`, `車間RMSE ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)}`, Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn"),
+          this.metric("最大車間", `${fmt(g.maxHeadwayStops)}停`, `なし ${fmt(p.maxHeadwayStops)} / スキップ ${fmt(s.maxHeadwayStops)}停`, g.maxHeadwayStops <= s.maxHeadwayStops ? "good" : "warn"),
+          this.metric("前車待ち削減", `S ${fmt(blockedSkip,0)}% / Sp ${fmt(blockedSpring,0)}%`, `総 ${fmt(p.totalBlockedDelayMin)} → ${fmt(s.totalBlockedDelayMin)} / ${fmt(g.totalBlockedDelayMin)} 分`, Math.max(blockedSkip, blockedSpring) > 8 ? "good" : "warn"),
+          this.metric("スプリング介入", `${fmt(g.springInterventionCount,0)}回`, `保持 ${fmt(g.totalSpringHoldMin)}分 / 補助スキップ ${fmt(g.springSkipAssistEvents,0)}回`, springCaution ? "warn" : "good")
+        ].join("");
+      }
+
+      metric(label, value, sub, cls) {
+        return `<div class="metric ${cls}"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`;
+      }
+
+      miniHtml(m) {
+        return [
+          ["平均待ち", `${fmt(m.avgWaitMin)}分`],
+          ["直近待ち", `${fmt(m.recentAvgWaitMin)}分`],
+          ["95%待ち", `${fmt(m.p95WaitMin)}分`],
+          ["最小車間", `${fmt(m.minHeadwayStops)}停`],
+          ["最大車間", `${fmt(m.maxHeadwayStops)}停`],
+          ["RMSE", `${fmt(m.headwayRmseStops)}停`],
+          ["前車待ち", `${fmt(m.totalBlockedDelayMin)}分`],
+          ["スキップ", `${m.skipEvents}回`],
+          ["保持", `${fmt(m.totalSpringHoldMin)}分`]
+        ].map(([k, v]) => `<div class="mini"><b>${v}</b><span>${k}</span></div>`).join("");
+      }
+
+      renderRoute(svg, sim, metrics) {
+        const c = sim.config;
+        const w = 760;
+        const h = 340;
+        const left = 44;
+        const right = 684;
+        const returnRight = 736;
+        const y = 170;
+        svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+        const span = right - left;
+        const stopGap = span / Math.max(1, c.stopCount - 1);
+        const stopX = (i) => left + span * i / Math.max(1, c.stopCount - 1);
+        const posX = (pos) => {
+          const wrapped = ((pos % c.stopCount) + c.stopCount) % c.stopCount;
+          const lower = Math.floor(wrapped);
+          const frac = wrapped - lower;
+          if (lower >= c.stopCount - 1) return stopX(c.stopCount - 1) + stopGap * frac;
+          return stopX(lower) + (stopX(lower + 1) - stopX(lower)) * frac;
+        };
+        const forbidden = new Set(c.forbiddenStops);
+        const hot = new Set(c.hotspotStops);
+        const waits = sim.waiting.map((q) => q.length);
+        const maxWait = Math.max(1, ...waits);
+        const recentSkips = sim.skipLog.filter((e) => sim.time - e.time < 45);
+        const recentBlocks = sim.blockLog.filter((e) => sim.time - e.time < 45);
+        const recentHolds = sim.springHoldLog.filter((e) => sim.time - e.time < 60);
+        let html = `<rect x="0" y="0" width="${w}" height="${h}" fill="transparent"/>`;
+        html += `<line x1="${left}" y1="${y}" x2="${returnRight}" y2="${y}" stroke="#8f9aa7" stroke-width="4" stroke-linecap="round"/>`;
+        html += `<line x1="${right}" y1="${y}" x2="${returnRight}" y2="${y}" stroke="#657080" stroke-width="5" stroke-linecap="round" opacity="0.72"/>`;
+        html += `<path d="M${returnRight - 1} ${y} l-12 -7 l3 14 z" fill="#657080" opacity="0.85"/>`;
+        html += `<text x="${(right + returnRight) / 2}" y="${y + 29}" text-anchor="middle" font-size="10" fill="#67707d">→0</text>`;
+        for (let i = 0; i < c.stopCount; i++) {
+          const x = stopX(i);
+          const r = 7 + waits[i] / maxWait * 17;
+          const skip = recentSkips.find((e) => e.stop === i);
+          const hold = recentHolds.find((e) => e.stop === i);
+          const stopState = sim.stops[i];
+          const activeBlock = stopState.blockedQueue.length > 0;
+          const recentBlock = recentBlocks.find((e) => e.stop === i);
+          const strokeColor = activeBlock ? "#c83f3f" : forbidden.has(i) ? "#222" : "#657080";
+          html += `<circle cx="${x}" cy="${y}" r="${r}" fill="${hot.has(i) ? "#f4b24d" : "#ffffff"}" stroke="${strokeColor}" stroke-width="${activeBlock ? 3.5 : forbidden.has(i) ? 3 : 1.5}"/>`;
+          if (stopState.occupiedByBusId !== null) {
+            html += `<rect x="${x-13}" y="${y+11}" width="26" height="10" rx="3" fill="#26313d"/>`;
+          }
+          if (activeBlock || recentBlock) {
+            html += `<text x="${x}" y="${y+62}" text-anchor="middle" font-size="10" font-weight="800" fill="#c83f3f">前車待ち</text>`;
+          }
+          html += `<text x="${x}" y="${y + 43}" text-anchor="middle" font-size="10" fill="#67707d">${i}</text>`;
+          html += `<text x="${x}" y="${y - r - 8}" text-anchor="middle" font-size="11" font-weight="700" fill="${waits[i] > 14 ? "#c83f3f" : "#4d5966"}">${waits[i]}</text>`;
+          if (skip) {
+            html += `<path d="M${x-15},${y-58} h30 v18 h-18 l-6,8 l-2,-8 h-4 z" fill="${skip.assist ? "#7357c8" : "#25865f"}"/>`;
+            html += `<text x="${x}" y="${y-45}" text-anchor="middle" font-size="9" fill="#fff">${skip.assist ? "補助" : "後続へ"}</text>`;
+            html += `<text x="${x}" y="${y-30}" text-anchor="middle" font-size="10" fill="#7357c8">${skip.passengers}人</text>`;
+          }
+          if (hold) {
+            html += `<text x="${x}" y="${y+78}" text-anchor="middle" font-size="10" font-weight="800" fill="#7357c8">保持${fmt(hold.holdSec,0)}秒</text>`;
+          }
+        }
+        const headways = sim.headways();
+        const close = headways.some((g) => g <= 1);
+        if (close) {
+          html += `<text x="${w/2}" y="32" text-anchor="middle" font-size="18" font-weight="800" fill="#c83f3f">団子発生</text>`;
+        }
+        for (const bus of sim.buses) {
+          const x = bus.status === "dwelling" && bus.serviceStopId != null ? stopX(bus.serviceStopId) : posX(bus.pos);
+          const load = bus.onboard.length / c.capacity;
+          const delayed = bus.delaySec > c.delayThresholdMin * 60;
+          const follower = sim.findFollower(bus);
+          const followerClose = follower && sim.routeDistanceBehind(follower, bus) <= c.distanceThresholdStops;
+          const skipping = bus.justSkippedStop != null || bus.lastAction.startsWith("降車のみ");
+          const assistSkipping = bus.lastAction.startsWith("補助");
+          const holding = bus.springHoldStartTime != null && sim.time >= bus.springHoldStartTime && sim.time <= bus.springHoldEndTime;
+          const blocked = bus.status === "blocked";
+          const color = blocked ? "#c83f3f" : holding ? "#7357c8" : assistSkipping ? "#7357c8" : skipping ? "#25865f" : load > 0.85 ? "#c83f3f" : delayed ? "#b47b13" : followerClose ? "#16848b" : "#2c6fbb";
+          const yy = y - 55 - ((bus.id % 2) * 30);
+          html += `<g>`;
+          html += `<line x1="${x}" y1="${y-8}" x2="${x}" y2="${yy+18}" stroke="${color}" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.7"/>`;
+          html += `<rect x="${x-23}" y="${yy-13}" width="46" height="26" rx="6" fill="${color}" stroke="#fff" stroke-width="2"/>`;
+          html += `<circle cx="${x-13}" cy="${yy+15}" r="4" fill="#26313d"/><circle cx="${x+13}" cy="${yy+15}" r="4" fill="#26313d"/>`;
+          html += `<text x="${x}" y="${yy+4}" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">B${bus.id}</text>`;
+          html += `<rect x="${x-22}" y="${yy+23}" width="44" height="5" rx="2" fill="#e5e8ec"/>`;
+          html += `<rect x="${x-22}" y="${yy+23}" width="${44 * clamp(load,0,1)}" height="5" rx="2" fill="${load > 0.85 ? "#c83f3f" : "#25865f"}"/>`;
+          html += `<text x="${x}" y="${yy+43}" text-anchor="middle" font-size="10" fill="#4d5966">${bus.onboard.length}人 ${fmt(bus.delaySec/60,1)}分</text>`;
+          if (blocked) html += `<text x="${x}" y="${yy-20}" text-anchor="middle" font-size="10" font-weight="800" fill="#c83f3f">前車待ち ${fmt(bus.blockedCurrentSec/60,1)}分</text>`;
+          if (holding) html += `<text x="${x}" y="${yy-20}" text-anchor="middle" font-size="10" font-weight="800" fill="#7357c8">スプリング保持</text>`;
+          else if (assistSkipping) html += `<text x="${x}" y="${yy-20}" text-anchor="middle" font-size="10" fill="#7357c8">補助スキップ</text>`;
+          else if (skipping) html += `<text x="${x}" y="${yy-20}" text-anchor="middle" font-size="10" fill="#25865f">降車のみ</text>`;
+          html += `</g>`;
+        }
+        html += `<text x="${left}" y="312" font-size="11" fill="#67707d">円環路線を横に展開。右端の短い直線区間が最後の停留所から0番への道です。</text>`;
+        html += `<text x="${right}" y="312" text-anchor="end" font-size="11" fill="#67707d">RMSE ${fmt(metrics.headwayRmseStops,2)} / 最小 ${fmt(metrics.minHeadwayStops,1)}停 / 最大 ${fmt(metrics.maxHeadwayStops,1)}停</text>`;
+        svg.innerHTML = html;
+      }
+
+      renderCharts(data) {
+        const plainHistory = data.plainHistory || [];
+        const skipHistory = data.skipHistory || [];
+        const springHistory = data.springHistory || [];
+        const durationMin = data.durationMin || this.config.durationMin;
+        const modeSeries = (key) => MODE_KEYS.map((mode) => ({
+          name: MODE_LABELS[mode],
+          color: MODE_COLORS[mode],
+          data: (data[`${mode}History`] || []).map((h) => [h.t/60, h[key]])
+        }));
+        this.drawLineChart($("bunchChart"), [
+          ...modeSeries("bunchScore")
+        ], 100, durationMin);
+        this.drawLineChart($("waitChart"), [
+          { name: "なし平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.avgWaitMin]) },
+          { name: "スキップ平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.avgWaitMin]) },
+          { name: "スプリング平均", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.avgWaitMin]) },
+          { name: "なし95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
+          { name: "スキップ95%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
+          { name: "スプリング95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true }
+        ], null, durationMin);
+        this.drawLineChart($("totalTimeChart"), [
+          { name: "なし平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.avgTotalMin]) },
+          { name: "スキップ平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.avgTotalMin]) },
+          { name: "スプリング平均", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.avgTotalMin]) },
+          { name: "なし95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.p95TotalMin]), dash: true },
+          { name: "スキップ95%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.p95TotalMin]), dash: true },
+          { name: "スプリング95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.p95TotalMin]), dash: true }
+        ], null, durationMin);
+        this.drawLineChart($("recentWaitChart"), [
+          { name: "なし直近平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
+          { name: "スキップ直近平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
+          { name: "スプリング直近平均", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
+          { name: "なし直近95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
+          { name: "スキップ直近95%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
+          { name: "スプリング直近95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true }
+        ], null, durationMin);
+        this.drawLineChart($("headwayChart"), modeSeries("minHeadwayStops"), null, durationMin);
+        this.drawLineChart($("maxHeadwayChart"), modeSeries("maxHeadwayStops"), null, durationMin);
+        this.drawLineChart($("rmseChart"), modeSeries("headwayRmseStops"), null, durationMin);
+        this.drawLineChart($("harmChart"), [
+          { name: "スキップ平均追加", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.skipAvgExtraMin]) },
+          { name: "スプリング平均追加", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.skipAvgExtraMin]) },
+          { name: "スキップ最大追加", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.skipMaxExtraMin]), dash: true },
+          { name: "スプリング最大追加", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.skipMaxExtraMin]), dash: true }
+        ], null, durationMin);
+        this.drawLineChart($("blockedChart"), modeSeries("totalBlockedDelayMin"), null, durationMin);
+        this.drawLineChart($("bunchBlockedChart"), modeSeries("blockedDuringBunchMin"), null, durationMin);
+        this.drawLineChart($("springChart"), [
+          { name: "保持累積分", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.totalSpringHoldMin || 0]) },
+          { name: "介入回数", color: "#b47b13", data: springHistory.map((h) => [h.t/60, h.springInterventionCount || 0]), dash: true }
+        ], null, durationMin);
+      }
+
+      drawLineChart(canvas, series, fixedMax = null, durationMin = this.config.durationMin) {
+        const ctx = canvas.getContext("2d");
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        const pad = { l: 34, r: 12, t: 10, b: 24 };
+        const all = series.flatMap((s) => s.data).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+        const maxX = Math.max(1, durationMin, ...all.map((p) => p[0]));
+        const maxY = fixedMax ?? Math.max(1, ...all.map((p) => p[1])) * 1.12;
+        ctx.strokeStyle = "#e2ddd3";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i <= 4; i++) {
+          const y = pad.t + (h - pad.t - pad.b) * i / 4;
+          ctx.moveTo(pad.l, y);
+          ctx.lineTo(w - pad.r, y);
+        }
+        ctx.stroke();
+        ctx.fillStyle = "#67707d";
+        ctx.font = "11px Segoe UI";
+        ctx.fillText("0", 8, h - pad.b + 4);
+        ctx.fillText(fmt(maxY, fixedMax ? 0 : 1), 5, pad.t + 6);
+        const xMap = (x) => pad.l + x / maxX * (w - pad.l - pad.r);
+        const yMap = (y) => h - pad.b - y / maxY * (h - pad.t - pad.b);
+        for (const s of series) {
+          if (!s.data.length) continue;
+          ctx.save();
+          ctx.strokeStyle = s.color;
+          ctx.lineWidth = 2.3;
+          if (s.dash) ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          let drawing = false;
+          s.data.forEach((p, i) => {
+            if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) {
+              drawing = false;
+              return;
+            }
+            const x = xMap(p[0]);
+            const y = yMap(clamp(p[1], 0, maxY));
+            if (!drawing) {
+              ctx.moveTo(x, y);
+              drawing = true;
+            }
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      clearCharts(message) {
+        const ids = ["bunchChart", "waitChart", "totalTimeChart", "recentWaitChart", "headwayChart", "maxHeadwayChart", "rmseChart", "harmChart", "blockedChart", "bunchBlockedChart", "springChart"];
+        for (const id of ids) {
+          const canvas = $(id);
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.strokeStyle = "#e2ddd3";
+          ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
+          ctx.fillStyle = "#67707d";
+          ctx.font = "12px Segoe UI";
+          ctx.textAlign = "center";
+          ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+          ctx.textAlign = "left";
+        }
+      }
+
+      renderComments(p, s, g) {
+        const improve = (m, key) => p[key] > 0 ? (p[key] - m[key]) / p[key] * 100 : 0;
+        const lines = [];
+        const waitSkip = improve(s, "avgWaitMin");
+        const waitSpring = improve(g, "avgWaitMin");
+        const totalSkip = improve(s, "avgTotalMin");
+        const totalSpring = improve(g, "avgTotalMin");
+        const rmseSkip = improve(s, "headwayRmseStops");
+        const rmseSpring = improve(g, "headwayRmseStops");
+        lines.push([Math.max(waitSkip, waitSpring) > 5 ? "good" : "warn", `平均待ち時間は、スキップ制御で${fmt(waitSkip,0)}%、スプリング法で${fmt(waitSpring,0)}%の変化です。`]);
+        lines.push([Math.max(totalSkip, totalSpring) > 5 ? "good" : "warn", `平均総所要時間は、待ち始めから目的地で降車するまでを測ります。スキップ制御で${fmt(totalSkip,0)}%、スプリング法で${fmt(totalSpring,0)}%の変化です。`]);
+        lines.push([Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn", `等間隔性を表す headway RMSE は ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)} 停です。最小車間だけでなく最大車間も合わせて見てください。`]);
+        lines.push([g.maxHeadwayStops <= s.maxHeadwayStops ? "good" : "warn", `最大車間は制御なし ${fmt(p.maxHeadwayStops)}、スキップ ${fmt(s.maxHeadwayStops)}、スプリング ${fmt(g.maxHeadwayStops)} 停です。空白区間の悪化抑制がスプリング法の主な確認点です。`]);
+        const skipHarm = s.skippedPassengers + g.skippedPassengers;
+        const harmClass = Math.max(s.skipMaxExtraMin, g.skipMaxExtraMin) > 6 || s.deniedAfterSkip + g.deniedAfterSkip > 0 ? "bad" : skipHarm > 0 ? "warn" : "good";
+        lines.push([harmClass, `スキップされた乗客はスキップ制御 ${fmt(s.skippedPassengers,0)} 人、スプリング法 ${fmt(g.skippedPassengers,0)} 人です。最大追加待ちは ${fmt(s.skipMaxExtraMin)} / ${fmt(g.skipMaxExtraMin)} 分です。`]);
+        lines.push([g.springInterventionCount > 0 ? "warn" : "good", `スプリング法の介入は保持 ${fmt(g.springHoldEvents,0)} 回、補助スキップ ${fmt(g.springSkipAssistEvents,0)} 回、保持累積 ${fmt(g.totalSpringHoldMin)} 分です。`]);
+        $("comments").innerHTML = lines.map(([cls, text]) => `<div class="line ${cls}">${text}</div>`).join("");
+      }
+
+      renderDetails(p, s, g, plainSd = null, skipSd = null, springSd = null) {
+        const rows = [
+          ["平均待ち時間 分", "avgWaitMin"],
+          ["直近5分 平均待ち 分", "recentAvgWaitMin"],
+          ["直近5分 95%待ち 分", "recentP95WaitMin"],
+          ["中央値待ち時間 分", "medianWaitMin"],
+          ["95%待ち時間 分", "p95WaitMin"],
+          ["最大待ち時間 分", "maxWaitMin"],
+          ["平均総所要時間 分", "avgTotalMin"],
+          ["95%総所要時間 分", "p95TotalMin"],
+          ["団子度", "bunchScore"],
+          ["最小車間 停", "minHeadwayStops"],
+          ["最大車間 停", "maxHeadwayStops"],
+          ["headway RMSE 停", "headwayRmseStops"],
+          ["headway CV", "headwayCv"],
+          ["団子発生回数", "bunchStarts"],
+          ["団子継続時間 分", "bunchDurationMin"],
+          ["平均遅延 分", "avgDelayMin"],
+          ["最大遅延 分", "maxDelayMin"],
+          ["総前車待ち遅延 分", "totalBlockedDelayMin"],
+          ["前車待ち発生回数", "blockEvents"],
+          ["最大前車待ち 分", "maxBlockedDelayMin"],
+          ["混雑偏り SD", "loadStd"],
+          ["総停車時間 分", "totalDwellMin"],
+          ["スキップ回数", "skipEvents"],
+          ["スキップ人数", "skippedPassengers"],
+          ["追加待ち平均 分", "skipAvgExtraMin"],
+          ["追加待ち最大 分", "skipMaxExtraMin"],
+          ["複数回スキップ 人", "multiSkippedPassengers"],
+          ["満員通過回数", "fullPassEvents"],
+          ["後続満員影響 人", "deniedAfterSkip"],
+          ["スプリング保持回数", "springHoldEvents"],
+          ["スプリング保持累積 分", "totalSpringHoldMin"],
+          ["スプリング保持平均 秒", "avgSpringHoldSec"],
+          ["スプリング保持最大 秒", "maxSpringHoldSec"],
+          ["補助スキップ回数", "springSkipAssistEvents"],
+          ["スプリング介入回数", "springInterventionCount"],
+          ["正の信号平均", "springPositiveSignalAvg"],
+          ["負の信号平均", "springNegativeSignalAvg"],
+          ["信号絶対値平均", "springSignalAbsAvg"]
+        ];
+        const hasSd = !!plainSd && !!skipSd && !!springSd;
+        const valueCell = (v) => fmt(v, Number.isInteger(v) ? 0 : 2);
+        const sdCell = (sd, key) => Number.isFinite(sd?.[key]) ? fmt(sd[key], 2) : "-";
+        const header = hasSd
+          ? "<tr><th>指標</th><th>制御なし 平均</th><th>スキップ 平均</th><th>スプリング 平均</th><th>制御なし SD</th><th>スキップ SD</th><th>スプリング SD</th></tr>"
+          : "<tr><th>指標</th><th>制御なし</th><th>スキップ</th><th>スプリング</th></tr>";
+        $("detailsTable").innerHTML = `<table><thead>${header}</thead><tbody>${
+          rows.map(([label, key]) => hasSd
+            ? `<tr><td>${label}</td><td>${valueCell(p[key])}</td><td>${valueCell(s[key])}</td><td>${valueCell(g[key])}</td><td>${sdCell(plainSd, key)}</td><td>${sdCell(skipSd, key)}</td><td>${sdCell(springSd, key)}</td></tr>`
+            : `<tr><td>${label}</td><td>${valueCell(p[key])}</td><td>${valueCell(s[key])}</td><td>${valueCell(g[key])}</td></tr>`
+          ).join("")
+        }</tbody></table>`;
+      }
+
+      async runSeedAverage() {
+        const { baseSeed, count, seeds } = this.seedAverageSeeds();
+        $("seedAverageBaseSeedInput").value = baseSeed;
+        $("seedAverageCountInput").value = count;
+        const base = { ...buildConfigFromInputs(), seed: baseSeed };
+        const updateEvery = count >= 10000 ? 25 : count >= 1000 ? 10 : 3;
+        const status = $("seedAverageStatus");
+        this.seedAverageAbortRequested = false;
+        status.textContent = "実行中";
+        status.className = "experiment-status running";
+        $("seedAverageModeBadge").textContent = "計算中";
+        $("seedAverageModeBadge").className = "badge yellow";
+        $("seedAverageSeeds").textContent = `使用シード: ${formatSeedList(seeds)}`;
+        $("experimentOutput").textContent = "シード平均を高速計算しています。";
+        $("seedAverageRunBtn").disabled = true;
+        $("seedAverageCancelBtn").hidden = false;
+        try {
+          const accumulator = createSeedAverageAccumulator();
+          const processedSeeds = [];
+          for (let i = 0; i < seeds.length; i++) {
+            if (this.seedAverageAbortRequested) break;
+            const result = this.runFastDetailed({ ...base, seed: seeds[i] });
+            accumulator.add(result);
+            processedSeeds.push(seeds[i]);
+            if ((i + 1) % updateEvery === 0 || i === seeds.length - 1) {
+              status.textContent = `実行中 ${i + 1} / ${seeds.length}`;
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          }
+          if (!processedSeeds.length) {
+            status.textContent = "中止";
+            status.className = "experiment-status error";
+            $("seedAverageModeBadge").textContent = "未計算";
+            $("seedAverageModeBadge").className = "badge";
+            return;
+          }
+          this.seedAverageResult = accumulator.build(processedSeeds, base);
+          const aborted = processedSeeds.length < seeds.length;
+          status.textContent = aborted ? `中止 ${processedSeeds.length} / ${seeds.length}` : "完了";
+          status.className = aborted ? "experiment-status running" : "experiment-status done";
+          $("seedAverageModeBadge").textContent = aborted ? "部分平均" : "平均結果";
+          $("seedAverageModeBadge").className = aborted ? "badge yellow" : "badge green";
+          $("seedAverageSeeds").textContent = `使用シード: ${formatSeedList(processedSeeds)}`;
+          const p = this.seedAverageResult.plainMetrics;
+          const s = this.seedAverageResult.skipMetrics;
+          const g = this.seedAverageResult.springMetrics;
+          $("experimentOutput").innerHTML = `${aborted ? "シード部分平均" : "シード平均"}: 待ち時間 ${fmt(p.avgWaitMin)}→${fmt(s.avgWaitMin)}/${fmt(g.avgWaitMin)}分、団子度 ${fmt(p.bunchScore,0)}→${fmt(s.bunchScore,0)}/${fmt(g.bunchScore,0)}、RMSE ${fmt(p.headwayRmseStops)}→${fmt(s.headwayRmseStops)}/${fmt(g.headwayRmseStops)}停。`;
+          this.setResultView("seedAverage");
+        } catch (error) {
+          console.error(error);
+          status.textContent = "エラー";
+          status.className = "experiment-status error";
+          $("seedAverageModeBadge").textContent = "エラー";
+          $("seedAverageModeBadge").className = "badge red";
+          $("experimentOutput").textContent = `シード平均の計算に失敗しました: ${error.message || error}`;
+        } finally {
+          $("seedAverageRunBtn").disabled = false;
+          $("seedAverageCancelBtn").hidden = true;
+        }
+      }
+
+      runSweep() {
+        const base = buildConfigFromInputs();
+        const distances = [0.8, 1.2, 1.6, 2.0];
+        const rows = distances.map((d) => {
+          const r = this.runFast({ ...base, distanceThresholdStops: d });
+          const improve = r.plain.avgWaitMin > 0 ? (r.plain.avgWaitMin - r.skip.avgWaitMin) / r.plain.avgWaitMin * 100 : 0;
+          return `${d}停: スキップ待ち改善${fmt(improve,0)}%, 団子度${fmt(r.skip.bunchScore,0)}, RMSE${fmt(r.skip.headwayRmseStops)}停, 最大追加${fmt(r.skip.skipMaxExtraMin)}分`;
+        });
+        $("experimentOutput").innerHTML = `後続車間しきい値スイープ<br>${rows.join("<br>")}`;
+      }
+
+      runFast(rawConfig) {
+        const result = this.runFastDetailed(rawConfig);
+        return Object.fromEntries(MODE_KEYS.map((mode) => [mode, result[mode].metrics]));
+      }
+
+      runFastDetailed(rawConfig) {
+        const config = normalizeConfig(rawConfig);
+        const events = EventGenerator.demandEvents(config);
+        const sims = {
+          plain: new Simulation({ ...config, controlMode: "none" }, "plain", events),
+          skip: new Simulation({ ...config, controlMode: "skip" }, "skip", events),
+          spring: new Simulation({ ...config, controlMode: "spring" }, "spring", events)
+        };
+        for (const sim of Object.values(sims)) sim.runToEnd();
+        return Object.fromEntries(MODE_KEYS.map((mode) => [mode, {
+          metrics: sims[mode].computeMetrics(),
+          history: sims[mode].history.map((h) => ({ ...h }))
+        }]));
+      }
+
+      exportJson() {
+        const payload = {
+          generatedAt: new Date().toISOString(),
+          config: this.config,
+          plain: { metrics: this.plain.computeMetrics(), history: this.plain.history, blockLog: this.plain.blockLog },
+          skip: { metrics: this.skip.computeMetrics(), history: this.skip.history, skipLog: this.skip.skipLog, blockLog: this.skip.blockLog },
+          spring: { metrics: this.spring.computeMetrics(), history: this.spring.history, skipLog: this.spring.skipLog, springHoldLog: this.spring.springHoldLog, springSignalLog: this.spring.springSignalLog, blockLog: this.spring.blockLog }
+        };
+        this.download("bus-bunching-results.json", JSON.stringify(payload, null, 2), "application/json");
+      }
+
+      exportCsv() {
+        const p = this.plain.computeMetrics();
+        const s = this.skip.computeMetrics();
+        const g = this.spring.computeMetrics();
+        const keys = [...new Set([...Object.keys(p), ...Object.keys(s), ...Object.keys(g)])].filter((k) => typeof p[k] === "number" || typeof s[k] === "number" || typeof g[k] === "number").sort();
+        const rows = [["metric", "plain", "skip", "spring"], ...keys.map((k) => [k, p[k] ?? "", s[k] ?? "", g[k] ?? ""])];
+        const csv = rows.map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n");
+        this.download("bus-bunching-metrics.csv", csv, "text/csv");
+      }
+
+      exportSeedAverageJson() {
+        if (!this.seedAverageResult) {
+          window.alert("シード平均結果がまだありません。先にシード平均を実行してください。");
+          return;
+        }
+        const payload = {
+          type: "bus-bunching-seed-average-results",
+          version: 1,
+          generatedAt: new Date().toISOString(),
+          config: this.seedAverageResult.config || buildConfigFromInputs(),
+          seedAverage: {
+            seeds: this.seedAverageResult.seeds,
+            seedCount: this.seedAverageResult.seeds.length,
+            plain: {
+              metrics: this.seedAverageResult.plainMetrics,
+              sd: this.seedAverageResult.plainSd,
+              history: this.seedAverageResult.plainHistory
+            },
+            skip: {
+              metrics: this.seedAverageResult.skipMetrics,
+              sd: this.seedAverageResult.skipSd,
+              history: this.seedAverageResult.skipHistory
+            },
+            spring: {
+              metrics: this.seedAverageResult.springMetrics,
+              sd: this.seedAverageResult.springSd,
+              history: this.seedAverageResult.springHistory
+            }
+          }
+        };
+        this.download("bus-bunching-seed-average-results.json", JSON.stringify(payload, null, 2), "application/json");
+      }
+
+      exportSeedAverageCsv() {
+        if (!this.seedAverageResult) {
+          window.alert("シード平均結果がまだありません。先にシード平均を実行してください。");
+          return;
+        }
+        const p = this.seedAverageResult.plainMetrics;
+        const s = this.seedAverageResult.skipMetrics;
+        const g = this.seedAverageResult.springMetrics;
+        const psd = this.seedAverageResult.plainSd || {};
+        const ssd = this.seedAverageResult.skipSd || {};
+        const gsd = this.seedAverageResult.springSd || {};
+        const keys = [...new Set([...Object.keys(p), ...Object.keys(s), ...Object.keys(g)])]
+          .filter((key) => typeof p[key] === "number" || typeof s[key] === "number" || typeof g[key] === "number")
+          .sort();
+        const rows = [
+          ["seed_count", this.seedAverageResult.seeds.length],
+          ["seeds", this.seedAverageResult.seeds.join(" ")],
+          [],
+          ["metric", "plain_mean", "skip_mean", "spring_mean", "plain_sd", "skip_sd", "spring_sd"],
+          ...keys.map((key) => [key, p[key] ?? "", s[key] ?? "", g[key] ?? "", psd[key] ?? "", ssd[key] ?? "", gsd[key] ?? ""])
+        ];
+        const csv = rows.map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\n");
+        this.download("bus-bunching-seed-average-metrics.csv", csv, "text/csv");
+      }
+
+      exportConfig() {
+        const payload = {
+          type: "bus-bunching-config",
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          config: this.config
+        };
+        this.download("bus-bunching-config.json", JSON.stringify(payload, null, 2), "application/json");
+      }
+
+      importConfigFile(event) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const payload = JSON.parse(String(reader.result || ""));
+            const imported = this.extractConfig(payload);
+            this.config = normalizeConfig(imported);
+            this.setPresetToCustom(this.config.name || "読み込み設定");
+            applyConfigToInputs(this.config);
+            this.setSettingsDirty(false);
+            this.reset();
+          } catch (error) {
+            window.alert(`設定JSONを読み込めませんでした。\n${error.message}`);
+          }
+        };
+        reader.onerror = () => window.alert("設定JSONを読み込めませんでした。");
+        reader.readAsText(file);
+      }
+
+      extractConfig(payload) {
+        const config = payload?.config || payload?.settings || payload;
+        if (!config || typeof config !== "object" || Array.isArray(config)) {
+          throw new Error("config オブジェクトが見つかりません。");
+        }
+        const required = ["stopCount", "busCount", "durationMin", "demandMultiplier"];
+        const missing = required.filter((key) => !Number.isFinite(Number(config[key])));
+        if (missing.length) {
+          throw new Error(`必須パラメータが不足しています: ${missing.join(", ")}`);
+        }
+        return config;
+      }
+
+      setPresetToCustom(name) {
+        const value = "imported";
+        let option = [...$("presetSelect").options].find((opt) => opt.value === value);
+        if (!option) {
+          option = document.createElement("option");
+          option.value = value;
+          $("presetSelect").appendChild(option);
+        }
+        option.textContent = name || "読み込み設定";
+        $("presetSelect").value = value;
+      }
+
+      download(name, text, type) {
+        const blob = new Blob([text], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      timeText(sec) {
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60);
+        return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      window.busBunchingApp = new ComparisonApp();
+    });
+  </script>
+</body>
+</html>
