@@ -1,0 +1,52 @@
+{
+  "name": "smoke",
+  "baseConfig": {
+    "name": "高頻度都市路線 smoke",
+    "seed": 58021,
+    "durationMin": 20,
+    "stopCount": 20,
+    "busCount": 5,
+    "demandMultiplier": 0.8,
+    "capacity": 36,
+    "baseSpeedKmh": 15,
+    "stopDistanceKm": 0.3,
+    "boardTimeSec": 3,
+    "alightTimeSec": 3,
+    "crowdedExtraSec": 4,
+    "stopManeuverLossSec": 10,
+    "doorTimeSec": 3,
+    "boardingSetupSec": 3.5,
+    "alightingSetupSec": 3.5,
+    "crowdingThreshold": 0.8,
+    "randomDelayMeanSec": 28,
+    "hotspotStops": [0, 7, 14],
+    "protectHotspotStops": false,
+    "hotspotMultiplier": 3,
+    "initialDelaySec": 0,
+    "distanceThresholdStops": 1.8,
+    "delayThresholdMin": 5,
+    "followerLoadLimit": 0.9,
+    "springGainSecPerStop": 40,
+    "springDeadbandStops": 1.2,
+    "springDamping": 0,
+    "springMaxHoldSec": 180,
+    "springMinHoldSec": 20
+  },
+  "seeds": {
+    "base": 238592,
+    "count": 4,
+    "step": 101
+  },
+  "sweep": [
+    { "param": "springGainSecPerStop", "label": "スプリングゲイン（秒/停留所）", "min": 20, "max": 40, "points": 2 },
+    { "param": "springDeadbandStops", "label": "スプリング不感帯（停留所）", "min": 1.0, "max": 1.4, "points": 2 }
+  ],
+  "modes": ["plain", "skip", "spring"],
+  "history": {
+    "aggregate": true,
+    "perSeed": false
+  },
+  "progress": {
+    "intervalSec": 1
+  }
+}

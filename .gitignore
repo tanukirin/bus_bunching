@@ -4,3 +4,7 @@ bus-bunching-metrics*.csv
 bus-bunching-config*.json
 old/
 *.html~
+sweep/runs/
+sweep/.streamlit/
+__pycache__/
+*.pyc
