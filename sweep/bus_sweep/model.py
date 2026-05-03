@@ -208,6 +208,7 @@ class Simulation:
         self.blockedDuringBunchSec = 0.0
         self.closePairEvents = 0
         self.totalDwell = 0.0
+        self.serviceStopCount = 0
         self.totalSpringHoldSec = 0.0
         self.maxSpringHoldSec = 0.0
         self.springSkipAssistEvents = 0
@@ -445,6 +446,7 @@ class Simulation:
         bus.routeSegmentStart = int(bus.routePos)
         bus.pos = stop
         if dwell > 0:
+            self.serviceStopCount += 1
             self.occupy_stop(stop, bus.id, dwell)
             bus.status = "dwelling"
             bus.dwellRemaining = dwell
@@ -643,6 +645,78 @@ class Simulation:
         positions = sorted(b.pos for b in self.buses)
         return [(positions[(i + 1) % len(positions)] - positions[i] + self.config["stopCount"]) % self.config["stopCount"] for i in range(len(positions))]
 
+    def stops_ahead(self, origin: int | float, dest: int | float) -> float:
+        return positive_modulo(dest - origin, self.config["stopCount"])
+
+    def expected_stop_to_stop_sec(self) -> tuple[float, float]:
+        average_dwell_sec = self.totalDwell / max(1, self.serviceStopCount)
+        expected = self.config["baseTravelSec"] + self.config.get("randomDelayMeanSec", 0.0) + average_dwell_sec
+        return expected, average_dwell_sec
+
+    def bus_arrival_to_stop_sec(self, bus: Bus, stop: int, expected_stop_to_stop_sec: float) -> float:
+        if bus.status == "moving":
+            remaining = max(0.0, bus.segmentRemaining)
+            stops_after_target = self.stops_ahead(bus.targetStop, stop)
+            return remaining + stops_after_target * expected_stop_to_stop_sec
+        if bus.status == "dwelling":
+            dwell = max(0.0, bus.dwellRemaining)
+            if bus.serviceStopId == stop:
+                return dwell
+            stops_after_current = self.stops_ahead(bus.pos, stop)
+            return dwell + stops_after_current * expected_stop_to_stop_sec
+        if bus.status == "blocked":
+            blocked_wait = 0.0
+            if bus.blockedStopId is not None:
+                berth = self.stops[bus.blockedStopId]
+                blocked_wait = max(0.0, berth.serviceEndTime - self.time) if berth.occupiedByBusId is not None else 0.0
+                if bus.blockedStopId == stop:
+                    return blocked_wait
+                stops_after_block = self.stops_ahead(bus.blockedStopId, stop)
+                return blocked_wait + stops_after_block * expected_stop_to_stop_sec
+        return self.stops_ahead(bus.pos, stop) * expected_stop_to_stop_sec
+
+    def min_bus_arrival_to_stop_sec(self, stop: int, expected_stop_to_stop_sec: float) -> float:
+        if not self.buses:
+            return 0.0
+        return min(self.bus_arrival_to_stop_sec(bus, stop, expected_stop_to_stop_sec) for bus in self.buses)
+
+    def adjusted_total_times_min(self) -> tuple[list[float], float, float]:
+        expected_stop_sec, average_dwell_sec = self.expected_stop_to_stop_sec()
+        ideal_headway_sec = (self.config["stopCount"] / max(1, self.config["busCount"])) * expected_stop_sec
+        capacity = max(1, self.config["capacity"])
+        values: list[float] = []
+        seen: set[int] = set()
+
+        for p in self.completed:
+            if p.alightTime is not None:
+                values.append(max(0.0, p.alightTime - p.arrivalTime) / 60)
+                seen.add(p.id)
+
+        for bus in self.buses:
+            for p in bus.onboard:
+                if p.id in seen:
+                    continue
+                elapsed = max(0.0, self.time - p.arrivalTime)
+                remaining_stops = self.stops_ahead(bus.pos, p.dest)
+                values.append((elapsed + remaining_stops * expected_stop_sec) / 60)
+                seen.add(p.id)
+
+        min_arrival_cache: dict[int, float] = {}
+        for origin, queue in enumerate(self.waiting):
+            if not queue:
+                continue
+            min_bus_arrival = min_arrival_cache.setdefault(origin, self.min_bus_arrival_to_stop_sec(origin, expected_stop_sec))
+            queue_penalty = max(0, len(queue) - capacity) / capacity * ideal_headway_sec
+            for p in queue:
+                if p.id in seen:
+                    continue
+                elapsed = max(0.0, self.time - p.arrivalTime)
+                trip_stops = self.stops_ahead(p.origin, p.dest)
+                values.append((elapsed + min_bus_arrival + queue_penalty + trip_stops * expected_stop_sec) / 60)
+                seen.add(p.id)
+
+        return values, expected_stop_sec, average_dwell_sec
+
     def sample(self) -> None:
         if self.lastSampleTime == self.time and self.history:
             return
@@ -665,11 +739,13 @@ class Simulation:
                 "t": self.time,
                 "bunchScore": metrics["bunchScore"],
                 "avgWaitMin": metrics["avgWaitMin"],
-                "p95WaitMin": metrics["p95WaitMin"],
+                "top5WaitMin": metrics["top5WaitMin"],
                 "avgTotalMin": metrics["avgTotalMin"],
-                "p95TotalMin": metrics["p95TotalMin"],
+                "top5TotalMin": metrics["top5TotalMin"],
+                "adjustedAvgTotalMin": metrics["adjustedAvgTotalMin"],
+                "adjustedTop5TotalMin": metrics["adjustedTop5TotalMin"],
                 "recentAvgWaitMin": metrics["recentAvgWaitMin"],
-                "recentP95WaitMin": metrics["recentP95WaitMin"],
+                "recentTop5WaitMin": metrics["recentTop5WaitMin"],
                 "recentBoardedPassengers": metrics["recentBoardedPassengers"],
                 "minHeadwayStops": metrics["minHeadwayStops"],
                 "maxHeadwayStops": metrics["maxHeadwayStops"],
@@ -696,6 +772,7 @@ class Simulation:
         ]
         rides = [(p.alightTime - p.boardTime) / 60 for p in self.completed if p.alightTime is not None and p.boardTime is not None]
         totals = [(p.alightTime - p.arrivalTime) / 60 for p in self.completed if p.alightTime is not None]
+        adjusted_totals, expected_stop_sec, average_dwell_sec = self.adjusted_total_times_min()
         skipped = [p for p in self.allPassengers.values() if p.skipCount > 0]
         skipped_boarded = [p for p in skipped if p.boardTime is not None and p.firstSkipTime is not None]
         skip_extra = [(p.boardTime - p.firstSkipTime) / 60 for p in skipped_boarded if p.boardTime is not None and p.firstSkipTime is not None]
@@ -712,6 +789,7 @@ class Simulation:
         close_severity = mean([clamp((ideal * 0.55 - h) / (ideal * 0.55), 0, 1) for h in headways])
         bunch_score = clamp(clamp(cv / 1.35, 0, 1) * 45 + clamp((0.65 - min_ratio) / 0.65, 0, 1) * 35 + close_severity * 20, 0, 100)
         load_by_bus = [len(b.onboard) for b in self.buses]
+        onboard_now = sum(load_by_bus)
         delay_by_bus = [b.delaySec / 60 for b in self.buses]
         stop_blocked_delay_mins = [s.totalBlockedDelaySec / 60 for s in self.stops]
         stop_occupied_mins = [s.totalOccupiedSec / 60 for s in self.stops]
@@ -723,18 +801,25 @@ class Simulation:
         return {
             "timeMin": self.time / 60,
             "completed": len(self.completed),
+            "allPassengers": len(self.allPassengers),
+            "onboardNow": onboard_now,
             "waitingNow": sum(len(q) for q in self.waiting),
             "avgWaitMin": mean(waits),
             "recentAvgWaitMin": mean(recent_waits) if recent_waits else math.nan,
-            "recentP95WaitMin": pct(recent_waits, 95) if recent_waits else math.nan,
+            "recentTop5WaitMin": pct(recent_waits, 95) if recent_waits else math.nan,
             "recentBoardedPassengers": len(recent_waits),
             "medianWaitMin": pct(waits, 50),
-            "p95WaitMin": pct(waits, 95),
+            "top5WaitMin": pct(waits, 95),
             "maxWaitMin": max(waits) if waits else 0,
             "over10Min": len([w for w in waits if w >= 10]),
             "avgRideMin": mean(rides),
             "avgTotalMin": mean(totals),
-            "p95TotalMin": pct(totals, 95),
+            "top5TotalMin": pct(totals, 95),
+            "adjustedAvgTotalMin": mean(adjusted_totals),
+            "adjustedTop5TotalMin": pct(adjusted_totals, 95),
+            "expectedStopToStopSec": expected_stop_sec,
+            "averageDwellSec": average_dwell_sec,
+            "serviceStopCount": self.serviceStopCount,
             "skippedPassengers": len(skipped),
             "skipEvents": len(self.skipLog),
             "skipAvgExtraMin": mean(skip_extra),

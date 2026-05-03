@@ -11,10 +11,12 @@ from .storage import write_parquet
 HIGHER_IS_BETTER = {"completed", "minHeadwayStops", "recentBoardedPassengers"}
 
 KEY_METRICS = [
+    "adjustedAvgTotalMin",
+    "adjustedTop5TotalMin",
     "avgTotalMin",
     "avgWaitMin",
-    "p95WaitMin",
-    "p95TotalMin",
+    "top5WaitMin",
+    "top5TotalMin",
     "headwayRmseStops",
     "maxHeadwayStops",
     "minHeadwayStops",
@@ -30,18 +32,20 @@ KEY_METRICS = [
 ]
 
 SURFACE_METRICS = [
+    "adjustedAvgTotalMin",
+    "adjustedTop5TotalMin",
     "avgTotalMin",
     "avgWaitMin",
-    "p95WaitMin",
+    "top5WaitMin",
     "headwayRmseStops",
     "maxHeadwayStops",
     "totalSpringHoldMin",
 ]
 
 DECISION_WEIGHTS = {
-    "avgTotalMin": 0.30,
+    "adjustedAvgTotalMin": 0.30,
     "avgWaitMin": 0.25,
-    "p95WaitMin": 0.15,
+    "top5WaitMin": 0.15,
     "headwayRmseStops": 0.20,
     "maxHeadwayStops": 0.10,
 }
@@ -94,10 +98,20 @@ def build_candidate_table(aggregate: pd.DataFrame) -> pd.DataFrame:
 
         warnings: list[str] = []
         strong_warnings: list[str] = []
-        if skip is not None and pd.notna(spring.get("avgTotalMin")) and pd.notna(skip.get("avgTotalMin")) and spring.get("avgTotalMin") > skip.get("avgTotalMin"):
-            warnings.append("総所要がskipより悪化")
-        if plain is not None and pd.notna(spring.get("p95TotalMin")) and pd.notna(plain.get("p95TotalMin")) and spring.get("p95TotalMin") > plain.get("p95TotalMin"):
-            strong_warnings.append("95%総所要が制御なしより悪化")
+        if (
+            skip is not None
+            and pd.notna(spring.get("adjustedAvgTotalMin"))
+            and pd.notna(skip.get("adjustedAvgTotalMin"))
+            and spring.get("adjustedAvgTotalMin") > skip.get("adjustedAvgTotalMin")
+        ):
+            warnings.append("補正平均総所要がskipより悪化")
+        if (
+            plain is not None
+            and pd.notna(spring.get("adjustedTop5TotalMin"))
+            and pd.notna(plain.get("adjustedTop5TotalMin"))
+            and spring.get("adjustedTop5TotalMin") > plain.get("adjustedTop5TotalMin")
+        ):
+            strong_warnings.append("補正上位5%総所要が制御なしより悪化")
         if pd.notna(spring.get("maxSpringHoldSec")) and spring.get("maxSpringHoldSec") > 120:
             warnings.append("最大保持120秒超")
         if pd.notna(spring.get("totalSpringHoldMin")) and spring.get("totalSpringHoldMin") > 60:
@@ -136,7 +150,8 @@ def build_candidate_table(aggregate: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     candidates = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
     candidates["rank"] = candidates.index + 1
-    candidates["pareto"] = pareto_flags(candidates, ["avgTotalMin", "headwayRmseStops"])
+    pareto_metrics = [metric for metric in ["adjustedAvgTotalMin", "headwayRmseStops"] if metric in candidates.columns]
+    candidates["pareto"] = pareto_flags(candidates, pareto_metrics) if pareto_metrics else True
     return candidates
 
 
@@ -159,7 +174,7 @@ def pareto_flags(df: pd.DataFrame, metrics: list[str]) -> list[bool]:
 
 def build_metric_surfaces(aggregate: pd.DataFrame, candidates: pd.DataFrame | None = None) -> pd.DataFrame:
     params = parameter_columns(aggregate)
-    rows = aggregate[aggregate["metric"].isin(SURFACE_METRICS)].copy()
+    rows = aggregate.copy()
     rows["direction"] = rows["metric"].map(metric_direction)
     rows["display_value"] = rows["mean"] * rows["direction"]
     rows["is_best"] = False

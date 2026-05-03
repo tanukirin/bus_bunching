@@ -12,7 +12,7 @@ SWEEP = ROOT / "sweep"
 sys.path.insert(0, str(SWEEP))
 
 from bus_sweep.config import PRESETS, normalize_config, seed_sequence  # noqa: E402
-from bus_sweep.model import EventGenerator, run_three_modes  # noqa: E402
+from bus_sweep.model import EventGenerator, Passenger, Simulation, run_three_modes  # noqa: E402
 from bus_sweep.stats import AggregateStats  # noqa: E402
 from bus_sweep.sweep import expand_sweep, point_values  # noqa: E402
 
@@ -61,6 +61,46 @@ class ModelPortTests(unittest.TestCase):
             for key in keys:
                 self.assertTrue(math.isfinite(py[mode]["metrics"][key]))
                 self.assertAlmostEqual(py[mode]["metrics"][key], js[mode][key], places=7, msg=f"{mode}.{key}")
+
+    def test_top5_metric_names_and_adjusted_metrics_are_emitted(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 238592, "durationMin": 8})
+        py = run_three_modes(config, include_history=True)
+        required = {"top5WaitMin", "top5TotalMin", "recentTop5WaitMin", "adjustedAvgTotalMin", "adjustedTop5TotalMin"}
+        legacy_prefix = "p" + "95"
+        for mode in ("plain", "skip", "spring"):
+            metrics = py[mode]["metrics"]
+            self.assertTrue(required <= set(metrics))
+            self.assertFalse(any(legacy_prefix in key.lower() for key in metrics))
+            for row in py[mode]["history"]:
+                self.assertFalse(any(legacy_prefix in key.lower() for key in row))
+
+    def test_adjusted_total_penalizes_incomplete_passengers(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 12345, "durationMin": 3, "demandMultiplier": 2.2, "initialDelaySec": 180})
+        metrics = run_three_modes(config, modes=["plain"], include_history=False)["plain"]["metrics"]
+        incomplete = metrics["allPassengers"] - metrics["completed"]
+        self.assertGreater(incomplete, 0)
+        self.assertGreaterEqual(metrics["adjustedAvgTotalMin"], metrics["avgTotalMin"])
+        self.assertGreaterEqual(metrics["adjustedTop5TotalMin"], metrics["top5TotalMin"])
+
+    def test_adjusted_total_uses_expected_stop_to_stop_components(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 54321, "durationMin": 6})
+        events = EventGenerator.demand_events(config)
+        sim = Simulation(config, "plain", events, include_history=False)
+        metrics = sim.run_to_end()
+        expected = config["baseTravelSec"] + config["randomDelayMeanSec"] + metrics["averageDwellSec"]
+        self.assertAlmostEqual(metrics["expectedStopToStopSec"], expected, places=7)
+        self.assertGreaterEqual(metrics["serviceStopCount"], 0)
+
+    def test_adjusted_total_matches_actual_when_all_passengers_completed(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 1, "durationMin": 1})
+        sim = Simulation(config, "plain", [], include_history=False)
+        passenger = Passenger(1, 0, 2, arrivalTime=10.0, boardTime=20.0, alightTime=130.0)
+        sim.time = 180.0
+        sim.allPassengers[passenger.id] = passenger
+        sim.completed.append(passenger)
+        metrics = sim.compute_metrics()
+        self.assertAlmostEqual(metrics["adjustedAvgTotalMin"], metrics["avgTotalMin"], places=7)
+        self.assertAlmostEqual(metrics["adjustedTop5TotalMin"], metrics["top5TotalMin"], places=7)
 
     def test_recent_nan_is_not_averaged_as_zero(self) -> None:
         stats = AggregateStats()

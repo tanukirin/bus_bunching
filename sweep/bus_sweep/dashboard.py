@@ -30,9 +30,11 @@ def query_arg(name: str, default: str) -> str:
 RUNS_ROOT = Path(query_arg("runs", "runs"))
 
 METRIC_ORDER = [
+    "adjustedAvgTotalMin",
+    "adjustedTop5TotalMin",
     "avgTotalMin",
     "avgWaitMin",
-    "p95WaitMin",
+    "top5WaitMin",
     "bunchScore",
     "headwayRmseStops",
     "maxHeadwayStops",
@@ -49,10 +51,12 @@ METRIC_ORDER = [
     "totalBlockedDelayMin",
     "avgStopOccupancyRate",
     "completed",
+    "allPassengers",
+    "onboardNow",
     "waitingNow",
-    "p95TotalMin",
+    "top5TotalMin",
     "recentAvgWaitMin",
-    "recentP95WaitMin",
+    "recentTop5WaitMin",
     "medianWaitMin",
     "maxWaitMin",
     "over10Min",
@@ -100,10 +104,12 @@ CATEGORY_STYLE = {
 EXCLUDED_PRIMARY_METRICS = {"idealHeadwayStops", "timeMin"}
 
 KEY_COMPARISON_METRICS = [
+    "adjustedAvgTotalMin",
+    "adjustedTop5TotalMin",
     "avgTotalMin",
     "avgWaitMin",
-    "p95WaitMin",
-    "p95TotalMin",
+    "top5WaitMin",
+    "top5TotalMin",
     "headwayRmseStops",
     "maxHeadwayStops",
     "minHeadwayStops",
@@ -120,10 +126,12 @@ KEY_COMPARISON_METRICS = [
 
 HIGHER_IS_BETTER = {"completed", "minHeadwayStops", "recentBoardedPassengers"}
 LOWER_IS_BETTER = {
+    "adjustedAvgTotalMin",
+    "adjustedTop5TotalMin",
     "avgWaitMin",
-    "p95WaitMin",
+    "top5WaitMin",
     "avgTotalMin",
-    "p95TotalMin",
+    "top5TotalMin",
     "bunchScore",
     "headwayRmseStops",
     "maxHeadwayStops",
@@ -142,9 +150,9 @@ LOWER_IS_BETTER = {
 }
 
 DECISION_WEIGHTS = {
-    "avgTotalMin": 0.30,
+    "adjustedAvgTotalMin": 0.30,
     "avgWaitMin": 0.25,
-    "p95WaitMin": 0.15,
+    "top5WaitMin": 0.15,
     "headwayRmseStops": 0.20,
     "maxHeadwayStops": 0.10,
 }
@@ -155,11 +163,18 @@ CANDIDATE_DISPLAY_COLUMNS = [
     "総合点",
     "スプリングゲイン",
     "スプリング不感帯",
+    "補正平均総所要時間",
+    "制御なし比 補正総所要改善",
+    "skip比 補正総所要改善",
+    "補正上位5%総所要時間",
     "平均総所要時間",
+    "制御なし比 総所要改善",
     "skip比 総所要改善",
     "平均待ち時間",
+    "制御なし比 待ち改善",
     "skip比 待ち改善",
     "車間RMSE",
+    "制御なし比 RMSE改善",
     "skip比 RMSE改善",
     "最大車間",
     "スキップ人数",
@@ -182,6 +197,8 @@ METRIC_LABELS = {
     "avgRideMin": "平均乗車時間",
     "avgSpringHoldSec": "平均スプリング保持秒",
     "avgStopOccupancyRate": "平均停留所占有率",
+    "adjustedAvgTotalMin": "補正平均総所要時間",
+    "adjustedTop5TotalMin": "補正上位5%総所要時間",
     "avgTotalMin": "平均総所要時間",
     "avgWaitMin": "平均待ち時間",
     "blockEvents": "前車待ち発生回数",
@@ -191,6 +208,8 @@ METRIC_LABELS = {
     "bunchStarts": "団子発生回数",
     "closePairs": "近接ペア数",
     "completed": "完了乗客数",
+    "allPassengers": "発生済み乗客数",
+    "onboardNow": "乗車中人数",
     "deniedAfterSkip": "スキップ後満員影響人数",
     "fullPassEvents": "満員通過回数",
     "headwayCv": "車間CV",
@@ -208,11 +227,11 @@ METRIC_LABELS = {
     "minHeadwayStops": "最小車間",
     "multiSkippedPassengers": "複数回スキップ人数",
     "over10Min": "10分以上待ち人数",
-    "p95TotalMin": "95%総所要時間",
-    "p95WaitMin": "95%待ち時間",
+    "top5TotalMin": "上位5%総所要時間",
+    "top5WaitMin": "上位5%待ち時間",
     "recentAvgWaitMin": "直近平均待ち時間",
     "recentBoardedPassengers": "直近乗車人数",
-    "recentP95WaitMin": "直近95%待ち時間",
+    "recentTop5WaitMin": "直近上位5%待ち時間",
     "skipAvgExtraMin": "スキップ平均追加待ち",
     "skipEvents": "スキップ回数",
     "skipMaxExtraMin": "スキップ最大追加待ち",
@@ -231,20 +250,25 @@ METRIC_LABELS = {
     "totalStopOccupiedMin": "停留所占有累計",
     "uniqueDeniedFull": "満員影響人数",
     "waitingNow": "待機中人数",
+    "expectedStopToStopSec": "推定1停留所移動秒",
+    "averageDwellSec": "平均停車秒",
+    "serviceStopCount": "停車処理回数",
 }
 
 METRIC_GUIDE = {
+    "adjustedAvgTotalMin": ("利用者", "小さいほど良い", "完了済み・乗車中・待機中の全発生乗客を人数分だけ含めた補正総所要時間。未完了者が多い方式を甘く評価しないための主指標。"),
+    "adjustedTop5TotalMin": ("利用者", "小さいほど良い", "補正総所要時間の悪い側。未完了者を含めた利用者リスクを見る。"),
     "avgWaitMin": ("利用者", "小さいほど良い", "平均的な待ち時間。まず見る主指標。"),
-    "p95WaitMin": ("利用者", "小さいほど良い", "待ち時間の悪い側。公平性や苦情リスクを見る。"),
+    "top5WaitMin": ("利用者", "小さいほど良い", "待ち時間の悪い側。公平性や苦情リスクを見る。"),
     "recentAvgWaitMin": ("利用者", "小さいほど良い", "終了直前5分の平均待ち時間。後半に悪化していないかを見る。"),
-    "recentP95WaitMin": ("利用者", "小さいほど良い", "終了直前5分の悪い側の待ち時間。終盤の不安定化を見る。"),
+    "recentTop5WaitMin": ("利用者", "小さいほど良い", "終了直前5分の悪い側の待ち時間。終盤の不安定化を見る。"),
     "recentBoardedPassengers": ("品質確認", "多いほど信頼しやすい", "直近待ち時間のサンプル数。少ない場合は直近指標を重く見ない。"),
     "medianWaitMin": ("利用者", "小さいほど良い", "典型的な乗客の待ち時間。平均とのズレで偏りを見る。"),
     "maxWaitMin": ("利用者", "小さいほど良い", "最悪待ち時間。外れ値に敏感なので補助指標。"),
     "over10Min": ("利用者", "小さいほど良い", "10分以上待った人数。サービス水準の閾値管理に使う。"),
     "avgRideMin": ("利用者", "小さいほど良い", "乗車後の平均移動時間。保持や前車待ちの車内影響を見る。"),
-    "avgTotalMin": ("利用者", "小さいほど良い", "待ち始めから降車までの総所要時間。採用判断で最重要候補。"),
-    "p95TotalMin": ("利用者", "小さいほど良い", "総所要時間の悪い側。利用者体験の悪化を確認する。"),
+    "avgTotalMin": ("利用者", "小さいほど良い", "待ち始めから降車までの総所要時間。完了済み乗客だけで集計するため、未完了者が多いケースでは補正総所要時間を優先する。"),
+    "top5TotalMin": ("利用者", "小さいほど良い", "総所要時間の悪い側。利用者体験の悪化を確認する。"),
     "bunchScore": ("診断", "小さいほど良い", "団子運転の総合スコア。車間RMSEを主指標にしたうえで、直感的な補助確認に使う。"),
     "headwayRmseStops": ("運行安定", "小さいほど良い", "理想車間からのズレ。制御パラメータ選定で重視。"),
     "minHeadwayStops": ("運行安定", "大きいほど良い", "最も近い車間。小さすぎると団子。"),
@@ -285,6 +309,8 @@ METRIC_GUIDE = {
     "springNegativeSignalAvg": ("診断", "単独評価しない", "前が近く後ろが空く信号の平均。保持判断の診断用。"),
     "springSignalAbsAvg": ("診断", "小さいほど均衡", "スプリング信号の絶対平均。車間アンバランスの診断。"),
     "completed": ("品質確認", "多いほど良い", "時間内に目的地へ到着した乗客数。少ない候補は注意。"),
+    "allPassengers": ("品質確認", "条件確認用", "シミュレーション中に発生済みの全乗客数。補正総所要時間の分母。"),
+    "onboardNow": ("品質確認", "小さいほど良い", "終了時点で乗車中の人数。未完了需要の残り。"),
     "waitingNow": ("品質確認", "小さいほど良い", "終了時点で待っている人数。未処理需要の残り。"),
     "timeMin": ("品質確認", "評価対象外", "シミュレーション上の現在時刻。主指標には通常使わない。"),
     "idealHeadwayStops": ("品質確認", "評価対象外", "理想車間。条件確認用で、最適化対象ではない。"),
@@ -427,7 +453,18 @@ def build_decision_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
     ]
     table = metric_means.merge(params, on="scenario_id", how="left")
     rows = []
-    lower_is_better = ["avgWaitMin", "p95WaitMin", "avgTotalMin", "p95TotalMin", "bunchScore", "headwayRmseStops", "maxHeadwayStops", "totalBlockedDelayMin"]
+    lower_is_better = [
+        "adjustedAvgTotalMin",
+        "adjustedTop5TotalMin",
+        "avgWaitMin",
+        "top5WaitMin",
+        "avgTotalMin",
+        "top5TotalMin",
+        "bunchScore",
+        "headwayRmseStops",
+        "maxHeadwayStops",
+        "totalBlockedDelayMin",
+    ]
     for scenario_id, group in table.groupby("scenario_id"):
         plain_rows = group[group["mode"].eq("plain")]
         if plain_rows.empty:
@@ -444,11 +481,11 @@ def build_decision_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
             out["scenario_label"] = scenario_label(row)
             out["mode_label"] = mode_label(str(row["mode"]))
             out["decision_score"] = (
-                out.get("avgTotalMin_improvement_pct", 0) * 0.30
-                + out.get("avgWaitMin_improvement_pct", 0) * 0.26
-                + out.get("p95WaitMin_improvement_pct", 0) * 0.14
-                + out.get("headwayRmseStops_improvement_pct", 0) * 0.22
-                + out.get("maxHeadwayStops_improvement_pct", 0) * 0.08
+                out.get("adjustedAvgTotalMin_improvement_pct", 0) * 0.30
+                + out.get("avgWaitMin_improvement_pct", 0) * 0.25
+                + out.get("top5WaitMin_improvement_pct", 0) * 0.15
+                + out.get("headwayRmseStops_improvement_pct", 0) * 0.20
+                + out.get("maxHeadwayStops_improvement_pct", 0) * 0.10
             )
             rows.append(out)
     return pd.DataFrame(rows).sort_values("decision_score", ascending=False) if rows else pd.DataFrame()
@@ -472,16 +509,20 @@ def decision_display(df: pd.DataFrame) -> pd.DataFrame:
         "scenario_label",
         "mode_label",
         "decision_score",
+        "adjustedAvgTotalMin",
+        "adjustedAvgTotalMin_improvement_pct",
+        "adjustedTop5TotalMin",
+        "adjustedTop5TotalMin_improvement_pct",
         "avgWaitMin",
         "avgWaitMin_improvement_pct",
         "avgTotalMin",
         "avgTotalMin_improvement_pct",
         "headwayRmseStops",
         "headwayRmseStops_improvement_pct",
-        "p95WaitMin",
-        "p95WaitMin_improvement_pct",
-        "p95TotalMin",
-        "p95TotalMin_improvement_pct",
+        "top5WaitMin",
+        "top5WaitMin_improvement_pct",
+        "top5TotalMin",
+        "top5TotalMin_improvement_pct",
         "maxHeadwayStops",
         "maxHeadwayStops_improvement_pct",
         "skippedPassengers",
@@ -499,16 +540,20 @@ def decision_display(df: pd.DataFrame) -> pd.DataFrame:
         "scenario_label": "条件",
         "mode_label": "方式",
         "decision_score": "総合スコア",
+        "adjustedAvgTotalMin": "補正平均総所要時間",
+        "adjustedAvgTotalMin_improvement_pct": "補正総所要改善率",
+        "adjustedTop5TotalMin": "補正上位5%総所要時間",
+        "adjustedTop5TotalMin_improvement_pct": "補正上位5%総所要改善率",
         "avgWaitMin": "平均待ち時間",
         "avgWaitMin_improvement_pct": "平均待ち改善率",
         "avgTotalMin": "平均総所要時間",
         "avgTotalMin_improvement_pct": "総所要改善率",
         "headwayRmseStops": "車間RMSE",
         "headwayRmseStops_improvement_pct": "車間RMSE改善率",
-        "p95WaitMin": "95%待ち時間",
-        "p95WaitMin_improvement_pct": "95%待ち改善率",
-        "p95TotalMin": "95%総所要時間",
-        "p95TotalMin_improvement_pct": "95%総所要改善率",
+        "top5WaitMin": "上位5%待ち時間",
+        "top5WaitMin_improvement_pct": "上位5%待ち改善率",
+        "top5TotalMin": "上位5%総所要時間",
+        "top5TotalMin_improvement_pct": "上位5%総所要改善率",
         "maxHeadwayStops": "最大車間",
         "maxHeadwayStops_improvement_pct": "最大車間改善率",
         "skippedPassengers": "スキップ人数",
@@ -527,6 +572,10 @@ def format_decision_table(df: pd.DataFrame) -> pd.DataFrame:
     shown = df.copy()
     formats = {
         "総合スコア": "{:.1f}",
+        "補正平均総所要時間": "{:.2f}",
+        "補正総所要改善率": "{:+.1f}%",
+        "補正上位5%総所要時間": "{:.2f}",
+        "補正上位5%総所要改善率": "{:+.1f}%",
         "平均待ち時間": "{:.2f}",
         "平均待ち改善率": "{:+.1f}%",
         "平均総所要時間": "{:.2f}",
@@ -535,12 +584,12 @@ def format_decision_table(df: pd.DataFrame) -> pd.DataFrame:
         "団子度改善率": "{:+.1f}%",
         "車間RMSE": "{:.2f}",
         "車間RMSE改善率": "{:+.1f}%",
-        "95%総所要時間": "{:.2f}",
-        "95%総所要改善率": "{:+.1f}%",
+        "上位5%総所要時間": "{:.2f}",
+        "上位5%総所要改善率": "{:+.1f}%",
         "最大車間": "{:.2f}",
         "最大車間改善率": "{:+.1f}%",
-        "95%待ち時間": "{:.2f}",
-        "95%待ち改善率": "{:+.1f}%",
+        "上位5%待ち時間": "{:.2f}",
+        "上位5%待ち改善率": "{:+.1f}%",
         "スキップ人数": "{:.1f}",
         "スキップ平均追加待ち": "{:.2f}",
         "保持累計分": "{:.1f}",
@@ -640,12 +689,12 @@ def build_candidate_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
 
         warnings: list[str] = []
         strong_warnings: list[str] = []
-        if skip is not None and pd.notna(spring.get("avgTotalMin")) and pd.notna(skip.get("avgTotalMin")):
-            if spring.get("avgTotalMin") > skip.get("avgTotalMin"):
-                warnings.append("総所要がskipより悪化")
-        if plain is not None and pd.notna(spring.get("p95TotalMin")) and pd.notna(plain.get("p95TotalMin")):
-            if spring.get("p95TotalMin") > plain.get("p95TotalMin"):
-                strong_warnings.append("95%総所要が制御なしより悪化")
+        if skip is not None and pd.notna(spring.get("adjustedAvgTotalMin")) and pd.notna(skip.get("adjustedAvgTotalMin")):
+            if spring.get("adjustedAvgTotalMin") > skip.get("adjustedAvgTotalMin"):
+                warnings.append("補正平均総所要がskipより悪化")
+        if plain is not None and pd.notna(spring.get("adjustedTop5TotalMin")) and pd.notna(plain.get("adjustedTop5TotalMin")):
+            if spring.get("adjustedTop5TotalMin") > plain.get("adjustedTop5TotalMin"):
+                strong_warnings.append("補正上位5%総所要が制御なしより悪化")
         if pd.notna(spring.get("maxSpringHoldSec")) and spring.get("maxSpringHoldSec") > 120:
             warnings.append("最大保持120秒超")
         if pd.notna(spring.get("totalSpringHoldMin")) and spring.get("totalSpringHoldMin") > 60:
@@ -670,6 +719,10 @@ def build_candidate_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
                 "総合点": score,
                 "判定": verdict,
                 "注意理由": " / ".join([*strong_warnings, *warnings]) if strong_warnings or warnings else "なし",
+                "adjustedAvgTotal_vs_skip_pct": improvement_pct("adjustedAvgTotalMin", spring.get("adjustedAvgTotalMin"), skip.get("adjustedAvgTotalMin") if skip is not None else None),
+                "adjustedAvgTotal_vs_plain_pct": improvement_pct("adjustedAvgTotalMin", spring.get("adjustedAvgTotalMin"), plain.get("adjustedAvgTotalMin") if plain is not None else None),
+                "adjustedTop5Total_vs_skip_pct": improvement_pct("adjustedTop5TotalMin", spring.get("adjustedTop5TotalMin"), skip.get("adjustedTop5TotalMin") if skip is not None else None),
+                "adjustedTop5Total_vs_plain_pct": improvement_pct("adjustedTop5TotalMin", spring.get("adjustedTop5TotalMin"), plain.get("adjustedTop5TotalMin") if plain is not None else None),
                 "avgTotal_vs_skip_pct": improvement_pct("avgTotalMin", spring.get("avgTotalMin"), skip.get("avgTotalMin") if skip is not None else None),
                 "avgWait_vs_skip_pct": improvement_pct("avgWaitMin", spring.get("avgWaitMin"), skip.get("avgWaitMin") if skip is not None else None),
                 "headwayRmse_vs_skip_pct": improvement_pct("headwayRmseStops", spring.get("headwayRmseStops"), skip.get("headwayRmseStops") if skip is not None else None),
@@ -707,12 +760,12 @@ def build_candidate_notes(candidate: pd.Series) -> list[str]:
     else:
         notes.append(f"{candidate.get('判定')}です。注意理由: {candidate.get('注意理由')}")
 
-    total_skip = candidate.get("avgTotal_vs_skip_pct")
+    total_skip = candidate.get("adjustedAvgTotal_vs_skip_pct")
     wait_skip = candidate.get("avgWait_vs_skip_pct")
     rmse_skip = candidate.get("headwayRmse_vs_skip_pct")
     hold = candidate.get("totalSpringHoldMin")
     if pd.notna(total_skip):
-        notes.append(f"skip比の総所要時間改善は {fmt_pct(total_skip)} です。")
+        notes.append(f"skip比の補正総所要時間改善は {fmt_pct(total_skip)} です。")
     if pd.notna(wait_skip) and pd.notna(rmse_skip):
         notes.append(f"待ち時間は {fmt_pct(wait_skip)}、車間RMSEは {fmt_pct(rmse_skip)} 改善しています。")
     if pd.notna(hold) and hold > 0:
@@ -724,11 +777,18 @@ def format_candidate_table(df: pd.DataFrame) -> pd.DataFrame:
     rename = {
         "springGainSecPerStop": "スプリングゲイン",
         "springDeadbandStops": "スプリング不感帯",
+        "adjustedAvgTotalMin": "補正平均総所要時間",
+        "adjustedAvgTotal_vs_plain_pct": "制御なし比 補正総所要改善",
+        "adjustedAvgTotal_vs_skip_pct": "skip比 補正総所要改善",
+        "adjustedTop5TotalMin": "補正上位5%総所要時間",
         "avgTotalMin": "平均総所要時間",
+        "avgTotal_vs_plain_pct": "制御なし比 総所要改善",
         "avgTotal_vs_skip_pct": "skip比 総所要改善",
         "avgWaitMin": "平均待ち時間",
+        "avgWait_vs_plain_pct": "制御なし比 待ち改善",
         "avgWait_vs_skip_pct": "skip比 待ち改善",
         "headwayRmseStops": "車間RMSE",
+        "headwayRmse_vs_plain_pct": "制御なし比 RMSE改善",
         "headwayRmse_vs_skip_pct": "skip比 RMSE改善",
         "maxHeadwayStops": "最大車間",
         "skippedPassengers": "スキップ人数",
@@ -741,11 +801,18 @@ def format_candidate_table(df: pd.DataFrame) -> pd.DataFrame:
         "総合点": "{:.1f}",
         "スプリングゲイン": "{:.2f}",
         "スプリング不感帯": "{:.2f}",
+        "補正平均総所要時間": "{:.2f}",
+        "制御なし比 補正総所要改善": "{:+.1f}%",
+        "skip比 補正総所要改善": "{:+.1f}%",
+        "補正上位5%総所要時間": "{:.2f}",
         "平均総所要時間": "{:.2f}",
+        "制御なし比 総所要改善": "{:+.1f}%",
         "skip比 総所要改善": "{:+.1f}%",
         "平均待ち時間": "{:.2f}",
+        "制御なし比 待ち改善": "{:+.1f}%",
         "skip比 待ち改善": "{:+.1f}%",
         "車間RMSE": "{:.2f}",
+        "制御なし比 RMSE改善": "{:+.1f}%",
         "skip比 RMSE改善": "{:+.1f}%",
         "最大車間": "{:.2f}",
         "スキップ人数": "{:.1f}",
@@ -800,12 +867,7 @@ def load_run(run_dir: str) -> tuple[dict, pd.DataFrame, pd.DataFrame, pd.DataFra
     aggregate = pd.read_parquet(path / "aggregate.parquet")
     history = pd.read_parquet(path / "history.parquet")
     derivatives: dict[str, pd.DataFrame] = {}
-    if (path / "candidates.parquet").exists() and (path / "metric_surfaces.parquet").exists() and (path / "mode_deltas.parquet").exists():
-        derivatives["candidates"] = pd.read_parquet(path / "candidates.parquet")
-        derivatives["metric_surfaces"] = pd.read_parquet(path / "metric_surfaces.parquet")
-        derivatives["mode_deltas"] = pd.read_parquet(path / "mode_deltas.parquet")
-    else:
-        derivatives = derived_data.build_visual_derivatives(aggregate)
+    derivatives = derived_data.build_visual_derivatives(aggregate)
     return manifest, results, aggregate, history, derivatives
 
 
@@ -821,20 +883,20 @@ if not runs:
     st.code("python -m bus_sweep.cli run --config configs/default_experiment.json --out runs/default --workers auto")
     st.stop()
 
-run = st.sidebar.selectbox("実験結果", runs, format_func=lambda p: p.name)
+run = st.selectbox("実験結果", runs, format_func=lambda p: p.name, label_visibility="collapsed")
 manifest, results, aggregate, history, derivatives = load_run(str(run))
 
-st.sidebar.caption(f"seed数: {manifest.get('seed_count')}  シナリオ数: {manifest.get('scenario_count')}  worker数: {manifest.get('workers')}")
-st.sidebar.caption(f"計算時間: {manifest.get('elapsed_sec', 0):.1f}秒")
+st.caption(f"seed数: {manifest.get('seed_count')}  シナリオ数: {manifest.get('scenario_count')}  worker数: {manifest.get('workers')}  計算時間: {manifest.get('elapsed_sec', 0):.1f}秒")
 
 metrics = sorted_metrics(list(aggregate["metric"].unique()))
-primary_metric = st.sidebar.selectbox(
+control_cols = st.columns([1.35, 1])
+primary_metric = control_cols[0].selectbox(
     "主指標",
     metrics,
-    index=metrics.index("avgWaitMin") if "avgWaitMin" in metrics else 0,
+    index=metrics.index("adjustedAvgTotalMin") if "adjustedAvgTotalMin" in metrics else 0,
     format_func=metric_select_label,
 )
-mode = st.sidebar.selectbox("方式", sorted(aggregate["mode"].unique()), index=0, format_func=mode_label)
+mode = control_cols[1].selectbox("方式", sorted(aggregate["mode"].unique()), index=0, format_func=mode_label)
 
 top = aggregate[(aggregate["metric"] == primary_metric) & (aggregate["mode"] == mode)].sort_values(
     "mean",
@@ -865,48 +927,58 @@ with terrain_tab:
     st.caption("青が良い、赤が悪い。各図の白丸はその指標の最良点、黒枠は制約付き総合点の上位候補です。")
     if not metric_surfaces.empty and len(param_cols) >= 2:
         surface_mode = st.selectbox("地形図の方式", sorted(metric_surfaces["mode"].unique()), index=sorted(metric_surfaces["mode"].unique()).index("spring") if "spring" in set(metric_surfaces["mode"].unique()) else 0, format_func=mode_label)
-        surface_metrics = [m for m in derived_data.SURFACE_METRICS if m in set(metric_surfaces["metric"])]
+        available_surface_metrics = sorted_metrics(list(metric_surfaces["metric"].dropna().unique()))
+        primary_surface_metrics = [m for m in derived_data.SURFACE_METRICS if m in set(available_surface_metrics)]
+        surface_metrics = [*primary_surface_metrics, *[m for m in available_surface_metrics if m not in set(primary_surface_metrics)]]
         grid_cols = st.columns(3)
         x_param, y_param = param_cols[0], param_cols[1]
-        for i, metric in enumerate(surface_metrics):
-            surface = metric_surfaces[(metric_surfaces["mode"].eq(surface_mode)) & (metric_surfaces["metric"].eq(metric))]
-            if surface.empty:
-                continue
-            heat = surface.pivot_table(index=y_param, columns=x_param, values="mean", aggfunc="mean")
-            scale = "RdBu" if metric_direction(metric) > 0 else "RdBu_r"
-            fig = px.imshow(
-                heat,
-                aspect="auto",
-                color_continuous_scale=scale,
-                labels={"x": param_label(x_param), "y": param_label(y_param), "color": metric_label(metric)},
-                title=metric_label(metric),
-            )
-            best_points = surface[surface["is_best"]]
-            top_points = surface[surface["top10_candidate"]]
-            if not top_points.empty:
-                fig.add_trace(
-                    go.Scatter(
-                        x=top_points[x_param],
-                        y=top_points[y_param],
-                        mode="markers",
-                        marker={"size": 12, "color": "rgba(0,0,0,0)", "line": {"color": "#111827", "width": 2}},
-                        name="上位候補",
-                        hoverinfo="skip",
-                    )
+
+        def render_surface_cards(metrics_to_render: list[str]) -> None:
+            for i, metric in enumerate(metrics_to_render):
+                surface = metric_surfaces[(metric_surfaces["mode"].eq(surface_mode)) & (metric_surfaces["metric"].eq(metric))]
+                if surface.empty:
+                    continue
+                heat = surface.pivot_table(index=y_param, columns=x_param, values="mean", aggfunc="mean")
+                scale = "RdBu" if metric_direction(metric) > 0 else "RdBu_r"
+                fig = px.imshow(
+                    heat,
+                    aspect="auto",
+                    color_continuous_scale=scale,
+                    labels={"x": param_label(x_param), "y": param_label(y_param), "color": metric_label(metric)},
+                    title=metric_label(metric),
                 )
-            if not best_points.empty:
-                fig.add_trace(
-                    go.Scatter(
-                        x=best_points[x_param],
-                        y=best_points[y_param],
-                        mode="markers",
-                        marker={"size": 9, "color": "#ffffff", "line": {"color": "#111827", "width": 1}},
-                        name="最良点",
-                        hoverinfo="skip",
+                best_points = surface[surface["is_best"]]
+                top_points = surface[surface["top10_candidate"]]
+                if not top_points.empty:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=top_points[x_param],
+                            y=top_points[y_param],
+                            mode="markers",
+                            marker={"size": 12, "color": "rgba(0,0,0,0)", "line": {"color": "#111827", "width": 2}},
+                            name="上位候補",
+                            hoverinfo="skip",
+                        )
                     )
-                )
-            fig.update_layout(height=330, margin={"l": 10, "r": 10, "t": 48, "b": 10}, coloraxis_showscale=False)
-            grid_cols[i % 3].plotly_chart(fig, use_container_width=True)
+                if not best_points.empty:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=best_points[x_param],
+                            y=best_points[y_param],
+                            mode="markers",
+                            marker={"size": 9, "color": "#ffffff", "line": {"color": "#111827", "width": 1}},
+                            name="最良点",
+                            hoverinfo="skip",
+                        )
+                    )
+                fig.update_layout(height=330, margin={"l": 10, "r": 10, "t": 48, "b": 10}, coloraxis_showscale=False)
+                grid_cols[i % 3].plotly_chart(fig, use_container_width=True)
+
+        render_surface_cards(surface_metrics[:9])
+        if len(surface_metrics) > 9:
+            with st.expander(f"その他の小型指標地形図（{len(surface_metrics) - 9}指標）", expanded=False):
+                grid_cols = st.columns(3)
+                render_surface_cards(surface_metrics[9:])
 
         focus_metric = st.selectbox("大判地形図の指標", surface_metrics, index=0, format_func=metric_label)
         focus = metric_surfaces[(metric_surfaces["mode"].eq(surface_mode)) & (metric_surfaces["metric"].eq(focus_metric))]
@@ -940,20 +1012,20 @@ with terrain_tab:
         conclusion_cols = st.columns([1.35, 1, 1, 1])
         conclusion_cols[0].metric("最有力候補", best["判定"], best["scenario_label"])
         conclusion_cols[1].metric("総合点", fmt_num(best.get("総合点"), 1), best.get("注意理由", ""))
-        conclusion_cols[2].metric("skip比 総所要改善", fmt_pct(best.get("avgTotal_vs_skip_pct")), f"{fmt_num(best.get('avgTotalMin'))}分")
+        conclusion_cols[2].metric("skip比 補正総所要改善", fmt_pct(best.get("adjustedAvgTotal_vs_skip_pct")), f"{fmt_num(best.get('adjustedAvgTotalMin'))}分")
         conclusion_cols[3].metric("skip比 RMSE改善", fmt_pct(best.get("headwayRmse_vs_skip_pct")), f"RMSE {fmt_num(best.get('headwayRmseStops'))}")
 
         notes = build_candidate_notes(best)
         st.markdown("".join(f"- {html.escape(note)}\n" for note in notes))
-        st.info("団子度は補助診断です。採用判断では、総所要時間、待ち時間、車間RMSE、最大車間、副作用を優先します。")
+        st.info("団子度は補助診断です。採用判断では、補正総所要時間、待ち時間、車間RMSE、最大車間、副作用を優先します。")
 
         st.subheader("plain / skip / spring 重要指標比較")
         st.markdown(comparison_html(build_mode_comparison(aggregate, best["scenario_id"])), unsafe_allow_html=True)
 
         st.subheader("判断の順番")
         guide_cols = st.columns(4)
-        guide_cols[0].metric("1. 総所要時間", "平均/95%", "待ち時間短縮が車内遅延で相殺されないか")
-        guide_cols[1].metric("2. 待ち時間", "平均/95%", "利用者が実感する改善")
+        guide_cols[0].metric("1. 補正総所要時間", "平均/上位5%", "未完了者を評価から落とさない")
+        guide_cols[1].metric("2. 待ち時間", "平均/上位5%", "利用者が実感する改善")
         guide_cols[2].metric("3. 車間安定", "RMSE/最大車間", "団子度は補助確認")
         guide_cols[3].metric("4. 副作用", "スキップ/保持", "負担が過大なら除外")
     else:
@@ -970,6 +1042,9 @@ with portfolio_tab:
             selected_verdicts = st.multiselect("判定フィルタ", verdicts, default=verdicts)
             max_rows = st.slider("表示件数", min_value=5, max_value=min(100, len(candidate_table)), value=min(30, len(candidate_table)))
             filtered_candidates = candidate_table[candidate_table["判定"].isin(selected_verdicts)].head(max_rows)
+            if filtered_candidates.empty:
+                st.info("条件に合う候補がありません。判定フィルタを広げてください。")
+                filtered_candidates = candidate_table.head(1)
             st.dataframe(format_candidate_table(filtered_candidates), use_container_width=True, hide_index=True)
             options = filtered_candidates.reset_index(drop=True)
             selected_idx = st.selectbox(
@@ -982,7 +1057,7 @@ with portfolio_tab:
             st.subheader("選択候補の読み解き")
             metric_cols = st.columns(4)
             metric_cols[0].metric("判定", selected["判定"], selected["注意理由"])
-            metric_cols[1].metric("skip比 総所要", fmt_pct(selected.get("avgTotal_vs_skip_pct")), f"{fmt_num(selected.get('avgTotalMin'))}分")
+            metric_cols[1].metric("skip比 補正総所要", fmt_pct(selected.get("adjustedAvgTotal_vs_skip_pct")), f"{fmt_num(selected.get('adjustedAvgTotalMin'))}分")
             metric_cols[2].metric("skip比 待ち", fmt_pct(selected.get("avgWait_vs_skip_pct")), f"{fmt_num(selected.get('avgWaitMin'))}分")
             metric_cols[3].metric("skip比 RMSE", fmt_pct(selected.get("headwayRmse_vs_skip_pct")), f"{fmt_num(selected.get('headwayRmseStops'))}")
             st.markdown("".join(f"- {html.escape(note)}\n" for note in build_candidate_notes(selected)))
@@ -996,7 +1071,7 @@ with portfolio_tab:
         x_metric = st.selectbox(
             "トレードオフ地図 横軸",
             tradeoff_metrics,
-            index=tradeoff_metrics.index("avgTotalMin") if "avgTotalMin" in tradeoff_metrics else 0,
+            index=tradeoff_metrics.index("adjustedAvgTotalMin") if "adjustedAvgTotalMin" in tradeoff_metrics else 0,
             format_func=metric_label,
         )
         y_metric = st.selectbox(
@@ -1008,6 +1083,7 @@ with portfolio_tab:
         hover_data = {
             "総合点": ":.1f",
             "判定": True,
+            "adjustedAvgTotalMin": ":.2f",
             "avgWaitMin": ":.2f",
             "avgTotalMin": ":.2f",
             "headwayRmseStops": ":.2f",
@@ -1029,6 +1105,7 @@ with portfolio_tab:
                 y_metric: metric_label(y_metric),
                 "総合点": "制約付き総合点",
                 "判定": "判定",
+                "adjustedAvgTotalMin": "補正平均総所要時間",
                 "avgWaitMin": "平均待ち時間",
                 "avgTotalMin": "平均総所要時間",
                 "headwayRmseStops": "車間RMSE",
@@ -1088,14 +1165,27 @@ with diff_tab:
     if candidate_table.empty:
         st.info("候補がありません。")
     else:
-        diff_options = candidate_table.head(30).reset_index(drop=True)
+        diff_control_cols = st.columns([1.4, 1])
+        verdicts = ["推奨", "注意", "保留", "除外候補"]
+        diff_verdicts = diff_control_cols[0].multiselect("判定フィルタ", verdicts, default=verdicts, key="diff_verdict_filter")
+        diff_max_rows = diff_control_cols[1].slider(
+            "表示件数",
+            min_value=5,
+            max_value=min(100, len(candidate_table)),
+            value=min(30, len(candidate_table)),
+            key="diff_max_rows",
+        )
+        diff_options = candidate_table[candidate_table["判定"].isin(diff_verdicts)].head(diff_max_rows).reset_index(drop=True)
+        if diff_options.empty:
+            st.info("条件に合う候補がありません。判定フィルタを広げてください。")
+            diff_options = candidate_table.head(1).reset_index(drop=True)
         diff_idx = st.selectbox(
             "差分を見る候補",
             list(range(len(diff_options))),
             format_func=lambda i: f"#{int(diff_options.iloc[i]['順位'])} {diff_options.iloc[i]['判定']} / {diff_options.iloc[i]['scenario_label']}",
         )
         scenario_id = diff_options.iloc[diff_idx]["scenario_id"]
-        slope_metrics = ["avgTotalMin", "avgWaitMin", "p95WaitMin", "headwayRmseStops", "maxHeadwayStops", "totalSpringHoldMin", "skippedPassengers", "bunchScore"]
+        slope_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "avgWaitMin", "top5WaitMin", "headwayRmseStops", "maxHeadwayStops", "totalSpringHoldMin", "skippedPassengers", "bunchScore"]
         rows = aggregate[aggregate["scenario_id"].eq(scenario_id) & aggregate["metric"].isin(slope_metrics)].copy()
         rows["metric_label"] = rows["metric"].map(metric_label)
         rows["mode_label"] = rows["mode"].map(mode_label)
@@ -1117,21 +1207,23 @@ with diff_tab:
         if not mode_deltas.empty:
             deltas = mode_deltas[
                 mode_deltas["scenario_id"].eq(scenario_id)
-                & mode_deltas["base_mode"].eq("skip")
                 & mode_deltas["target_mode"].eq("spring")
+                & mode_deltas["base_mode"].isin(["plain", "skip"])
                 & mode_deltas["metric"].isin(slope_metrics)
             ].copy()
             deltas["metric_label"] = deltas["metric"].map(metric_label)
+            deltas["比較元"] = deltas["base_mode"].map(lambda value: "制御なし比" if value == "plain" else "skip比")
             deltas["color"] = deltas["improvement_pct"].map(lambda v: "改善" if pd.notna(v) and v > 0.5 else ("悪化" if pd.notna(v) and v < -0.5 else "同等"))
             bar = px.bar(
                 deltas.sort_values("improvement_pct"),
                 x="improvement_pct",
                 y="metric_label",
                 orientation="h",
-                color="color",
-                color_discrete_map={"改善": "#2563eb", "悪化": "#dc2626", "同等": "#6b7280"},
-                labels={"improvement_pct": "spring改善率 vs skip (%)", "metric_label": "指標"},
-                title="spring vs skip 差分バー",
+                color="比較元",
+                barmode="group",
+                color_discrete_map={"制御なし比": "#2563eb", "skip比": "#f97316"},
+                labels={"improvement_pct": "spring改善率 (%)", "metric_label": "指標"},
+                title="spring の改善率 - 制御なし比 / skip比",
             )
             bar.update_layout(height=420)
             st.plotly_chart(bar, use_container_width=True)
@@ -1158,7 +1250,7 @@ with risk_tab:
             fig.update_layout(height=300, showlegend=False)
             col.plotly_chart(fig, use_container_width=True)
 
-        strip_metrics = ["avgTotalMin", "p95TotalMin", "totalSpringHoldMin", "maxSpringHoldSec", "skippedPassengers"]
+        strip_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "totalSpringHoldMin", "maxSpringHoldSec", "skippedPassengers"]
         strips = candidate_table.melt(
             id_vars=["scenario_id", "判定", "順位", "scenario_label"],
             value_vars=[m for m in strip_metrics if m in candidate_table.columns],
@@ -1231,30 +1323,13 @@ with detail_tab:
 
 with guide_tab:
     st.markdown(
-        "広い探索では、まず `平均総所要時間`、`平均待ち時間`、`95%待ち時間`、`車間RMSE`、`最大車間`、"
+        "広い探索では、まず `補正平均総所要時間`、`平均待ち時間`、`上位5%待ち時間`、`車間RMSE`、`最大車間`、"
         "`スキップ人数`、`スプリング保持累計` を見ます。団子度は補助診断として使います。"
     )
     st.markdown(metric_guide_html(), unsafe_allow_html=True)
 
 with st.expander("実験メタデータ"):
     st.json(manifest)
-
-with st.expander("主指標の選び方"):
-    st.markdown(
-        "広い探索では、まず `平均総所要時間`、`平均待ち時間`、`95%待ち時間`、`車間RMSE`、`最大車間`、`スキップ人数`、`スプリング保持累計` を見ます。"
-        "`団子度` は車間RMSEを確認した後の補助診断として扱います。"
-        "副作用が許容範囲に入った候補だけ、95%指標や時系列で詳しく確認してください。"
-    )
-    st.markdown(metric_guide_html(), unsafe_allow_html=True)
-
-with st.expander("パラメータ名の対応表"):
-    st.dataframe(
-        pd.DataFrame(
-            [{"内部名": key, "日本語名": value} for key, value in PARAM_LABELS.items()]
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
 
 with st.expander("実行コマンド例"):
     st.code("python -m bus_sweep.cli run --config configs/default_experiment.json --out runs/new-run --workers auto")

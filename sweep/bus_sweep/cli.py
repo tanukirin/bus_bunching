@@ -90,7 +90,11 @@ def print_summary(run_dir: Path, top: int) -> None:
         raise SystemExit(f"run outputs not found: {run_dir}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     rows = pq.read_table(aggregate_path).to_pylist()
-    metric_rows = [r for r in rows if r["mode"] in {"skip", "spring"} and r["metric"] in {"avgWaitMin", "avgTotalMin", "bunchScore", "headwayRmseStops"}]
+    metric_rows = [
+        r
+        for r in rows
+        if r["mode"] in {"skip", "spring"} and r["metric"] in {"adjustedAvgTotalMin", "avgWaitMin", "top5WaitMin", "headwayRmseStops"}
+    ]
     print(f"Run: {manifest.get('name')}  scenarios={manifest.get('scenario_count')} seeds={manifest.get('seed_count')} workers={manifest.get('workers')}")
     print(f"Elapsed: {manifest.get('elapsed_sec', 0):.2f}s  failures={manifest.get('failure_count')}")
     print()

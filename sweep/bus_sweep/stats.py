@@ -7,13 +7,15 @@ from typing import Any
 
 SEED_AVERAGE_SD_KEYS = {
     "avgWaitMin",
-    "p95WaitMin",
+    "top5WaitMin",
     "maxWaitMin",
     "recentAvgWaitMin",
-    "recentP95WaitMin",
+    "recentTop5WaitMin",
     "recentBoardedPassengers",
     "avgTotalMin",
-    "p95TotalMin",
+    "top5TotalMin",
+    "adjustedAvgTotalMin",
+    "adjustedTop5TotalMin",
     "bunchScore",
     "bunchDurationMin",
     "headwayErrorSum",
