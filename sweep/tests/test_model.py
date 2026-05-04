@@ -13,8 +13,9 @@ sys.path.insert(0, str(SWEEP))
 
 from bus_sweep.config import PRESETS, normalize_config, seed_sequence  # noqa: E402
 from bus_sweep.model import EventGenerator, Passenger, Simulation, run_three_modes  # noqa: E402
+from bus_sweep.runner import auto_workers, run_experiment  # noqa: E402
 from bus_sweep.stats import AggregateStats  # noqa: E402
-from bus_sweep.sweep import expand_sweep, point_values  # noqa: E402
+from bus_sweep.sweep import expand_sweep, point_values, scenario_id  # noqa: E402
 
 
 def node_reference(seed: int, duration_min: int = 12) -> dict:
@@ -102,6 +103,12 @@ class ModelPortTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["adjustedAvgTotalMin"], metrics["avgTotalMin"], places=7)
         self.assertAlmostEqual(metrics["adjustedTop5TotalMin"], metrics["top5TotalMin"], places=7)
 
+    def test_legacy_stop_fixed_parts_are_combined(self) -> None:
+        config = normalize_config({"stopManeuverLossSec": 10, "doorTimeSec": 3})
+        self.assertEqual(config["fixedStopSec"], 13)
+        self.assertNotIn("stopManeuverLossSec", config)
+        self.assertNotIn("doorTimeSec", config)
+
     def test_recent_nan_is_not_averaged_as_zero(self) -> None:
         stats = AggregateStats()
         stats.add_metric_row("s1", "plain", {"recentAvgWaitMin": math.nan, "avgWaitMin": 1.0})
@@ -128,6 +135,45 @@ class ModelPortTests(unittest.TestCase):
         self.assertEqual(point_values(20, 60, 3), [20, 40, 60])
         self.assertEqual(point_values(1.0, 1.4, 2), [1.0, 1.4])
         self.assertEqual(point_values(5, 9, 1), [5])
+
+    def test_auto_workers_leaves_desktop_headroom(self) -> None:
+        self.assertEqual(auto_workers(1), 1)
+        self.assertEqual(auto_workers(2), 1)
+        self.assertEqual(auto_workers(4), 2)
+        self.assertEqual(auto_workers(8), 4)
+        self.assertEqual(auto_workers(16), 9)
+        self.assertEqual(auto_workers(64), 12)
+
+    def test_long_scenario_ids_keep_digest(self) -> None:
+        long_key = "spring" + "VeryLongParameterName" * 8
+        first = scenario_id({long_key: "x" * 80})
+        second = scenario_id({long_key: "y" * 80})
+        self.assertLessEqual(len(first), 120)
+        self.assertRegex(first, r"__[0-9a-f]{8}$")
+        self.assertNotEqual(first, second)
+
+    def test_invalid_modes_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported mode"):
+            run_three_modes(PRESETS["urban"], modes=["plain", "sprng"])
+
+    def test_experiment_rejects_invalid_modes_before_workers(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="bus_sweep_bad_modes_") as tmp:
+            config_path = Path(tmp) / "bad.json"
+            out_dir = Path(tmp) / "out"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "baseConfig": {**PRESETS["urban"], "durationMin": 1},
+                        "seeds": {"base": 1, "count": 1},
+                        "modes": ["plain", "sprng"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "unsupported mode"):
+                run_experiment(config_path, out_dir, workers=1)
 
 
 if __name__ == "__main__":

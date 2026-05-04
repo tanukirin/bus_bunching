@@ -82,7 +82,11 @@ def scenario_id(params: dict[str, Any]) -> str:
     raw = json.dumps(params, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     prefix = "__".join(f"{safe_key(k)}={safe_value(v)}" for k, v in params.items())
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
-    return f"{prefix}__{digest}"[:120]
+    suffix = f"__{digest}"
+    max_length = 120
+    if len(prefix) + len(suffix) <= max_length:
+        return f"{prefix}{suffix}"
+    return f"{prefix[: max_length - len(suffix)]}{suffix}"
 
 
 def safe_key(value: str) -> str:

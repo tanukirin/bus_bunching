@@ -1,344 +1,313 @@
 # Codex Handoff: Bus Bunching Simulator
 
-This file is written for future Codex sessions, not primarily for humans.
-Read this before modifying the project.
+This file is for future Codex sessions. Read it before modifying the project.
 
-## Current Repository State
+## Repository State
 
 - Workspace: `C:\Users\suzuk\Desktop\apps\bus_bunching`
 - Remote: `https://github.com/tanukirin/bus_bunching.git`
 - Branch: `main`
-- Last pushed commit at time of this handoff:
-  - `5a4b669 Improve seed average controls`
-- Current working tree has local uncommitted changes in:
-  - `index.html`
-  - `README.md`
-  - `AI_HANDOFF.md`
-- The uncommitted `index.html` change raises seed-average experiment capacity from 100 to 100000, changes the default seed-average count to 200, adds streaming aggregation plus cancellation, and adds seed-average JSON/CSV export. It has not been pushed unless a later session did so.
-- Ignored local generated files:
-  - `bus-bunching-results*.json`
-  - `bus-bunching-results*.csv`
-  - `bus-bunching-metrics*.csv`
-  - `bus-bunching-config*.json`
-  - `old/`
+- Latest pushed commits at time of this handoff:
+  - `6eb5e7a Improve dashboard CSV exports`
+  - `b4f24b1 Improve sweep metrics and dashboard`
+  - `5466335 Add bus sweep analysis workbench`
+- Known local uncommitted/untracked files at handoff time:
+  - `AI_HANDOFF.md` modified by this handoff update
+  - `sweep/configs/default_experiment.json` modified by user or previous work; inspect before staging
+  - `spring/bus-bunching-seed-average-metrics.csv` untracked generated output
+  - `spring/bus-bunching-seed-average-results.json` untracked generated output
+- Do not stage generated result files unless the user explicitly asks.
 
-Run first:
+Run first in a new session:
 
 ```powershell
 git status -sb
 git log -5 --oneline
 ```
 
-## Project Purpose
-
-Single-file browser app for comparing:
-
-- normal high-frequency bus operation where bus bunching emerges naturally
-- proposed control where a delayed leading bus may serve a stop as alighting-only and leave boarding passengers for the following bus
-
-It is educational / exploratory, not a calibrated operations model.
-
-Important current assumptions:
-
-- one-way circular route
-- displayed as a mostly straight horizontal route
-- no overtaking
-- one berth per stop
-- if a stop is occupied, following buses wait before the stop
-- passenger arrivals and travel delays are seed-driven and reproducible
-- control and no-control runs share the same generated passenger demand events
-
-## File Map
+## Project Structure
 
 - `index.html`
-  - whole app: HTML, CSS, simulation, rendering, charts, import/export
-  - use as the current template for future subprojects
-- `README.md`
-  - user-facing description and parameter docs
+  - Original single-file browser simulator.
+  - Keep as the baseline unless explicitly asked to change it.
+- `spring/index.html`
+  - Browser-based three-way comparison app.
+  - Compares `plain`, `skip`, and `spring` under the same seed and same demand events.
+- `sweep/`
+  - Python package and Streamlit/Plotly analysis workbench for large seed and parameter sweeps.
+  - This is the current main analysis tool for large experiments.
 - `tools/apply-default-config.js`
-  - updates default config embedded in `index.html` from an exported config JSON
-- `LICENSE`
-  - MIT
-- `.gitignore`
-  - ignores generated result/config files and `old/`
-
-## Important Code Locations In `index.html`
-
-Line numbers drift. Use `rg`.
+  - Updates embedded defaults from exported config JSON.
+  - Root target by default; pass a second target for spring:
 
 ```powershell
-rg -n "const PRESETS|function normalizeConfig|class EventGenerator|class Simulation|class ComparisonApp" index.html
-rg -n "runSeedAverage|createSeedAverageAccumulator|runFastDetailed|travelNoise|chooseDestination" index.html
+node tools/apply-default-config.js bus-bunching-config.json spring/index.html
 ```
 
-Key components:
+## Core Simulation Invariants
 
-- Utility / stats helpers near top of script
-  - `fmt`, `mean`, `std`, `pct`, `circularForward`, `positiveModulo`, `parseList`
-  - `formatSeedList`
-  - seed-average aggregators:
-    - `createSeedAverageAccumulator`
-    - `addMetricStreamingStats`
-    - `addHistoryStreamingStats`
-    - `meanFromStreamingStats`
-    - `sdFromStreamingStats`
-- `PARAM_HELP`
-  - tooltip text for parameter controls
-- `SeededRng`
-  - deterministic RNG
-- `EventGenerator`
-  - `demandEvents(config)`
-  - `chooseDestination(config, rng, origin)`
-  - `travelNoise(config, fromStop, startTimeSec)`
-- `Simulation`
-  - simulation state, bus movement, dwell, blocking, metrics
-  - `runToEnd()`
-  - `computeMetrics()`
-  - `sample()`
-- `ComparisonApp`
-  - DOM app controller
-  - settings binding
-  - animation loop
-  - rendering
-  - seed average UI
-  - export/import
+Preserve these across browser and Python implementations:
 
-## Seed Average State
+- circular one-way route
+- no overtaking
+- one berth per stop
+- blocked buses wait before occupied stops
+- deterministic passenger demand and travel delay by seed
+- for each seed/scenario, `plain`, `skip`, and `spring` share the same generated demand events
 
-Recent local changes:
+The fairness invariant is important: do not regenerate demand independently per mode.
 
-- `seedAverageCountInput` max is now `100000`
-- `seedAverageCountInput` default is now `200`
-- Large seed counts use streaming aggregation instead of storing all results
-- `seedAverageCancelBtn` requests cancellation
-- `seedAverageExportJsonBtn` exports the latest seed-average result as JSON
-- `seedAverageExportCsvBtn` exports the latest seed-average metric means and SDs as CSV
-- If cancelled after some seeds, app displays a partial average
-- `formatSeedList` truncates huge seed lists in the UI
-- `runSeedAverage()` builds seeds as:
+## Spring Control Model
+
+Direction convention:
+
+```text
+進行方向 →
+
+後方バス        自車          前方バス
+   A ----------- B ------------ C
+        h_back        h_front
+```
+
+- `h_back`: distance from rear bus A to current bus B
+- `h_front`: distance from current bus B to front bus C
+- `idealHeadwayStops = stopCount / busCount`
+- `springSignal = h_front - h_back`
+
+Interpretation:
+
+- `springSignal > 0`: front is open and rear is close, so the current bus wants to move forward.
+- `springSignal < 0`: front is close and rear is open, so the current bus should avoid moving forward.
+
+Spring behavior:
+
+- Holding is considered when `springSignal < -springDeadbandStops`, `h_front < H`, and `h_back > H`.
+- Holding seconds:
 
 ```js
-baseSeed + 101 * i
+clamp(
+  (-springSignal - springDeadbandStops) * springGainSecPerStop - springDamping * bus.delaySec,
+  0,
+  springMaxHoldSec
+)
 ```
 
-Important: 100000 seeds can still be CPU-expensive in a browser. The implementation is memory-friendlier, not magically fast.
+- Holds shorter than `springMinHoldSec` are suppressed.
+- Auxiliary spring skip is considered only when `springSignal > Math.max(springDeadbandStops, 0.5)`, `h_front > H`, and `h_back < H`.
+- Auxiliary skip also must pass normal distance skip safety checks and `springSkipImprovesHeadway()`.
+- Do not add speed control unless explicitly requested.
 
-If adding heavy experiment tools, consider a Web Worker or Node-based batch runner rather than running everything on the UI thread.
+## Python Sweep Workbench
 
-## Simulation Model Notes
+Package: `sweep/bus_sweep/`
 
-Passenger generation:
+- `config.py`: presets, normalization, JSON import/export
+- `model.py`: RNG, demand events, `Simulation`, three-mode execution
+- `sweep.py`: Cartesian parameter grid expansion, supports `values` and `min`/`max`/`points`
+- `runner.py`: ProcessPool-based chunked execution, progress, manifest, output writing
+- `stats.py`: streaming aggregation, non-finite values ignored
+- `storage.py`: Parquet writing helpers
+- `derived.py`: candidate table, metric surfaces, mode deltas for dashboard
+- `dashboard.py`: Streamlit + Plotly dashboard
+- `cli.py`: CLI entry points
 
-- `EventGenerator.demandEvents(config)`
-- base demand rate:
+Run from `sweep/`:
 
-```js
-0.23 * config.demandMultiplier
+```powershell
+python -m bus_sweep.cli run --config configs/default_experiment.json --out runs/default --workers auto --engine fast
+python -m bus_sweep.cli summarize --run runs/default
+streamlit run bus_sweep/dashboard.py -- --runs runs
 ```
 
-- demand is modified by time wave, stop position bias, and hotspot multiplier
-- passenger destination is chosen by `chooseDestination`; hotspot stops are also more likely destinations
+Smoke run:
 
-Travel delay:
+```powershell
+python -m bus_sweep.cli run --config configs/smoke_experiment.json --out runs/smoke-fast --workers 2 --chunk-size 2 --engine fast
+python -m bus_sweep.cli summarize --run runs/smoke-fast
+```
 
-- `EventGenerator.travelNoise(config, fromStop, startTimeSec)`
-- shared by stop segment and time bucket, not bus-specific free noise
-- bucket size uses `config.noiseBucketSec`
-- `randomDelayMeanSec` is converted internally to delay scale using `NOISE_MEAN_FACTOR`
+Engine modes:
 
-Bus movement:
+- `fast`: event-sized steps for broad exploration; default for CLI.
+- `audit`: fixed-step style closer to browser behavior; use for verification.
 
-- circular route position
-- no overtaking outside stops
-- one berth at each stop
-- blocked bus records front-vehicle waiting delay separately from dwell/travel delay
+Worker defaults are designed for a high-end CPU. ProcessPool commands may require elevated permission in this environment because Windows pipe creation can fail under sandboxing.
 
-Dwell time:
+## Sweep Outputs
 
-- includes maneuver loss, door time, alighting setup, boarding setup, per-passenger boarding/alighting time, crowded extra
-- boarding and alighting are sequential, not simultaneous
-- if no alighting and no waiting passengers, stop service is skipped / zero dwell depending on current logic
+Each run directory typically contains:
 
-Control:
+- `manifest.json`: config, hardware, worker count, start/end times, failures
+- `results.parquet`: seed-level scalar metrics
+- `aggregate.parquet`: scenario / mode / metric mean, sd, n
+- `history.parquet`: scenario / mode average history if enabled
+- `candidates.parquet`: candidate rankings and warnings, generated by summarize/derived
+- `metric_surfaces.parquet`: surface data for terrain maps
+- `mode_deltas.parquet`: plain/skip/spring deltas for visual comparisons
+- `progress.jsonl`: throttled progress and failure events
 
-- alighting-only stop handling can be triggered if leading bus is delayed and follower is close enough
-- policy modes: distance, time, hybrid
-- important/hotspot stop protection is controlled by `protectHotspotStops`
-- removed mechanisms: cooldown, per-trip max skips, max consecutive skips
+`sweep/runs/` is generated output and should stay out of git.
 
-## Metrics And Rendering
+## Metrics And Naming
 
-Metrics are produced by `Simulation.computeMetrics()`.
+Current metric naming uses `top5...`, not `p95...`.
 
-Major metric groups:
+Important user-facing metrics:
 
-- passenger waits: average, median, p95, max, recent window
-- ride/total travel time
-- headway and bunching score
-- delay
-- load imbalance
-- dwell time
-- skip harms
-- blocked/front-vehicle waiting delay
-- stop occupancy and stop-level blocked delay
+- `adjustedAvgTotalMin`: corrected average total journey time
+- `adjustedTop5TotalMin`: corrected top 5% total journey time
+- `avgTotalMin`: completed-passenger-only average total journey time
+- `top5TotalMin`: completed-passenger-only top 5% total journey time
+- `avgWaitMin`
+- `top5WaitMin`
+- `recentAvgWaitMin`
+- `recentTop5WaitMin`
+- `headwayRmseStops`
+- `maxHeadwayStops`
+- `skippedPassengers`
+- `totalSpringHoldMin`
+- `maxSpringHoldSec`
 
-Charts are canvas-based and are rendered by:
+Do not reintroduce `p95...` output keys unless the user explicitly asks for compatibility migration.
 
-- `renderCharts(data)`
-- `drawLineChart`
-- `drawBarChart`
-- `clearCharts`
+### Corrected Total Time
 
-Normal animation and seed-average results use the same `renderResultData(data)` pathway.
+Corrected total time prevents incomplete passengers from being dropped from the evaluation.
 
-## Current UI Concepts
+Definitions:
 
-Top tabs:
+- denominator: all generated/arrived passengers in `allPassengers`
+- completed passenger: `alightTime - arrivalTime`
+- onboard passenger: `currentTime - arrivalTime + remainingStopsToDest * expectedStopToStopSec`
+- waiting passenger: `currentTime - arrivalTime + minBusArrivalToOriginSec + queuePenaltySec + tripStops * expectedStopToStopSec`
 
-- `animationTab`
-- `seedAverageTab`
+Components:
 
-Seed average view:
+- `baseTravelSec = max(20, stopDistanceKm / max(4, baseSpeedKmh) * 3600)`
+- `averageDwellSec = totalDwell / max(1, serviceStopCount)`
+- `expectedStopToStopSec = baseTravelSec + randomDelayMeanSec + averageDwellSec`
+- `idealHeadwaySec = (stopCount / busCount) * expectedStopToStopSec`
+- `queuePenaltySec = max(0, waitingAtOrigin - capacity) / capacity * idealHeadwaySec`
+- `minBusArrivalToOriginSec`: minimum estimated arrival time to origin across all buses
 
-- can be opened before running
-- has its own controls:
-  - `seedAverageBaseSeedInput`
-  - `seedAverageCountInput`
-  - `seedAverageRunBtn`
-  - `seedAverageCancelBtn`
-  - `seedAverageRandomBtn`
-  - `seedAverageSyncBtn`
-- no bus-position animation in seed-average mode
-- shows summary/charts/comments/details after run
+This is a comparison penalty metric, not an exact forecast.
 
-Side lightweight panel:
+## Dashboard Notes
 
-- `multiSeedBtn` currently just opens the seed-average tab
-- `sweepBtn` still runs a small distance-threshold sweep and writes into `experimentOutput`
+Current dashboard tabs:
 
-## Known Technical Debt
+- `地形図`: parameter surfaces; blue means better, red means worse
+- `候補ポートフォリオ`: candidate ranking and tradeoff map
+- `方式差分`: plain/skip/spring slope and improvement bars
+- `リスク`: holding/skip/risk distributions
+- `詳細`: exports, all scenario data, candidate tables, time series
+- `指標ガイド`: metric definitions
 
-- `index.html` is large. Future subprojects should probably split code into modules, but do not do a large refactor inside the current app unless requested.
-- Some older helper functions still exist:
-  - `averageMetrics`
-  - `sdMetrics`
-  - `averageHistories`
-  They are still useful for small-array aggregation, but seed-average large-count path should use `createSeedAverageAccumulator`.
-- Browser UI for very large seed counts is still CPU-bound and single-threaded.
-- No automated browser test suite exists.
-- Shell output may display Japanese text as mojibake depending on PowerShell encoding. Do not assume the actual file is corrupted solely from shell display.
+Dashboard conventions:
 
-## Validation Commands Used Recently
+- No Streamlit sidebar; controls are at the top or inside tabs.
+- Candidate table uses Plotly Table instead of pandas Styler to avoid matplotlib/NumPy binary issues.
+- Candidate table shows both plain ratio and skip ratio where relevant.
+- Terrain maps are generated for all metrics; primary metrics are shown first and the rest are folded.
+- Portfolio tab does not duplicate the heatmap already covered by the terrain tab.
 
-Syntax check:
+Detail tab exports:
+
+- Human-readable CSV: one row per `scenario × mode`, including `制御なし`, `スキップ制御`, and `スプリング法`; absolute metric values only; internal scenario ID at the end.
+- Scenario-wide CSV: one row per scenario, with mode-prefixed metric columns.
+- Long aggregate CSV: DB-style `scenario_id / mode / metric / mean / sd / n`.
+- Seed-level CSV: per-seed scalar metrics.
+- Parquet downloads for raw aggregate/results where useful.
+
+The ugly internal `scenario_id` values such as `springGainSecPerStop=...__...` are implementation IDs. Human-readable exports should show `シナリオ001` plus parameter columns and keep `内部ID` at the end.
+
+## Config Notes
+
+Experiment JSON shape:
+
+- `baseConfig`: browser-compatible base config
+- `seeds`: `base`, `count`, `step`
+- `sweep`: list of parameter specs
+  - `{ "param": "...", "values": [...] }`
+  - or `{ "param": "...", "min": ..., "max": ..., "points": ... }`
+- `modes`: usually `["plain", "skip", "spring"]`
+- `history.aggregate`: save average time series or not
+- `progress.intervalSec`: minimum interval for `progress.jsonl` events
+
+At handoff time, `sweep/configs/default_experiment.json` is locally modified. Inspect it before staging or changing it.
+
+## Browser App Notes
+
+Root `index.html` and `spring/index.html` remain large single-file apps. Do not split them unless the user explicitly asks for a larger refactor.
+
+Useful search points:
+
+```powershell
+Select-String -Path index.html -Pattern "const PRESETS|function normalizeConfig|class EventGenerator|class Simulation|class ComparisonApp"
+Select-String -Path spring/index.html -Pattern "MODE_KEYS|class EventGenerator|class Simulation|headwayContext|springDecision|computeMetrics|runSeedAverage"
+```
+
+PowerShell may display Japanese text as mojibake in command output. Do not assume file corruption from terminal output alone; read with `-Encoding UTF8`.
+
+## Validation Commands
+
+Python checks:
+
+```powershell
+python -m py_compile sweep\bus_sweep\model.py sweep\bus_sweep\derived.py sweep\bus_sweep\dashboard.py sweep\bus_sweep\stats.py sweep\bus_sweep\cli.py
+python -m unittest discover -s sweep\tests
+```
+
+Streamlit HTTP smoke check:
+
+```powershell
+$p = Start-Process -FilePath python -ArgumentList @('-m','streamlit','run','bus_sweep/dashboard.py','--server.port','8505','--server.headless','true','--','--runs','runs') -WorkingDirectory 'C:\Users\suzuk\Desktop\apps\bus_bunching\sweep' -WindowStyle Hidden -PassThru
+Start-Sleep -Seconds 8
+try { Invoke-WebRequest -Uri 'http://localhost:8505' -UseBasicParsing -TimeoutSec 10 } finally { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+```
+
+Browser syntax checks:
 
 ```powershell
 @'
 const fs = require('fs');
-const html = fs.readFileSync('index.html', 'utf8');
+const html = fs.readFileSync('spring/index.html', 'utf8');
 const code = html.match(/<script>([\s\S]*)<\/script>/)[1];
 new Function(code);
 console.log('syntax ok');
 '@ | node -
 ```
 
-Diff whitespace check:
+Whitespace check:
 
 ```powershell
 git diff --check
 ```
 
-Streaming seed average smoke test:
-
-```powershell
-@'
-const fs = require('fs');
-let html = fs.readFileSync('index.html', 'utf8');
-let code = html.match(/<script>([\s\S]*)<\/script>/)[1];
-code = code.replace(/window\.addEventListener\([\s\S]*?\n    \}\);/, '');
-const test = `
-const config = normalizeConfig({...PRESETS.urban, durationMin: 20});
-const seeds = Array.from({ length: 50 }, (_, i) => 420550 + 101 * i);
-const acc = createSeedAverageAccumulator();
-for (const seed of seeds) {
-  const events = EventGenerator.demandEvents({...config, seed});
-  const plain = new Simulation({...config, seed, controlEnabled: false}, 'plain', events);
-  const control = new Simulation({...config, seed, controlEnabled: true}, 'control', events);
-  plain.runToEnd();
-  control.runToEnd();
-  acc.add({
-    plain: { metrics: plain.computeMetrics(), history: plain.history },
-    control: { metrics: control.computeMetrics(), history: control.history }
-  });
-}
-const out = acc.build(seeds, config);
-if (!Number.isFinite(out.plainMetrics.avgWaitMin) || !Number.isFinite(out.controlSd.avgWaitMin) || !out.controlHistory.length) throw new Error('bad streaming aggregate');
-console.log('stream aggregate ok', out.seeds.length, fmt(out.plainMetrics.avgWaitMin), fmt(out.controlSd.avgWaitMin), out.controlHistory.length);
-`;
-new Function(code + test)();
-'@ | node -
-```
-
-## Subproject Strategy
-
-The user plans to create multiple subprojects in this directory based on current source.
-
-Recommended structure:
-
-```text
-bus_bunching/
-  index.html                  # current baseline app
-  README.md
-  tools/
-  experiments/
-    spring-control/
-      index.html
-      README.md
-    parameter-sweep/
-      index.html or app files
-      README.md
-```
-
-But `experiments/` is not currently created. If creating it, check `.gitignore`; currently `old/` is ignored but `experiments/` is not.
-
-For future subprojects:
-
-- Copy current `index.html` first, then change one model idea per subproject.
-- Do not mutate baseline behavior unless the user explicitly asks.
-- Preserve deterministic seeding and same-demand no-control/control comparison.
-- If adding spring method:
-  - add a separate policy path, not by overwriting alighting-only skip logic
-  - likely place near control policy inside `Simulation`
-  - add parameters and metrics explicitly
-- If adding parameter sweep / batch tools:
-  - prefer streaming aggregation
-  - do not store all histories for huge sweeps unless needed
-  - consider Node CLI or Web Worker for large runs
-  - export summarized results as CSV/JSON
-
-## Git / Publish Notes
+## Git And Publishing
 
 When asked to publish:
 
 1. `git status -sb`
-2. inspect diff
+2. inspect the diff and untracked files
 3. stage only intended files
-4. run syntax check
+4. run relevant checks
 5. `git commit -m "..."`
 6. `git push origin main`
 
-Current environment often requires escalated permission for `git add`, `git commit`, and `git push`.
+Current environment often requires escalated permission for `git add` and `git commit` because `.git/index.lock` creation may be denied. `git push origin main` has worked through normal git credentials even when `gh auth status` reported an invalid token.
 
-## User Preferences Learned
+## User Preferences
 
-- User wants direct implementation, not just suggestions.
-- User wants practical UI/UX quality and clear operational interpretation.
+- User usually wants implementation, not just a proposal.
 - User often asks to push to GitHub after changes.
 - User cares about:
+  - deterministic same-demand comparison
   - no overtaking artifacts
-  - realistic dwell time assumptions
-  - one berth/no passing stop behavior
-  - seed reproducibility
-  - results validity and why metrics differ
-  - fairness metrics for skipped passengers
-  - scalable seed-average / batch experiments
+  - one berth/no-passing stop behavior
+  - realistic dwell, holding, skip, and passenger fairness assumptions
+  - seed-average correctness and scalability
+  - corrected total journey time and clear metric definitions
+  - missing-data handling
+  - high-quality Japanese UI/UX and readable CSV exports
+- Keep explanations concrete and concise.

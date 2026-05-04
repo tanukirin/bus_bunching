@@ -13,8 +13,7 @@
     "boardTimeSec": 3,
     "alightTimeSec": 3,
     "crowdedExtraSec": 4,
-    "stopManeuverLossSec": 10,
-    "doorTimeSec": 3,
+    "fixedStopSec": 10,
     "boardingSetupSec": 3.5,
     "alightingSetupSec": 3.5,
     "crowdingThreshold": 0.8,
@@ -26,8 +25,8 @@
     "distanceThresholdStops": 1.8,
     "delayThresholdMin": 5,
     "followerLoadLimit": 0.9,
-    "springGainSecPerStop": 40,
-    "springDeadbandStops": 1.2,
+    "springGainSecPerStop": 42,
+    "springDeadbandStops": 1.3,
     "springDamping": 0,
     "springMaxHoldSec": 180,
     "springMinHoldSec": 20
@@ -38,8 +37,20 @@
     "step": 101
   },
   "sweep": [
-    { "param": "springGainSecPerStop", "label": "スプリングゲイン（秒/停留所）", "min": 0, "max": 150, "points": 30 },
-    { "param": "springDeadbandStops", "label": "スプリング不感帯（停留所）", "min": 0, "max": 4.0, "points": 10 }
+    {
+      "param": "alightTimeSec",
+      "label": "降車秒数（秒/人）",
+      "min": 0.5,
+      "max": 10.0,
+      "points": 20
+    },
+    {
+      "param": "alightingSetupSec",
+      "label": "降車発生時固定秒",
+      "min": 1.0,
+      "max": 10.0,
+      "points": 10
+    }
   ],
   "modes": ["plain", "skip", "spring"],
   "history": {

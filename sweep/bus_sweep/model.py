@@ -463,7 +463,7 @@ class Simulation:
         crowded_extra = self.config["crowdedExtraSec"] if load_ratio >= self.config["crowdingThreshold"] else 0
         boarding_process = self.config["boardingSetupSec"] + crowded_extra + boarded * self.config["boardTimeSec"] if boarded > 0 else 0
         alighting_process = self.config["alightingSetupSec"] + crowded_extra + alighted * self.config["alightTimeSec"] if alighted > 0 else 0
-        return self.config["stopManeuverLossSec"] + self.config["doorTimeSec"] + boarding_process + alighting_process
+        return self.config["fixedStopSec"] + boarding_process + alighting_process
 
     def occupy_stop(self, stop_id: int, bus_id: int, dwell_sec: float) -> None:
         stop = self.stops[stop_id]
@@ -894,6 +894,9 @@ class Simulation:
 
 
 def run_three_modes(raw_config: dict[str, Any], modes: list[str] | tuple[str, ...] = MODE_KEYS, include_history: bool = True, engine: str = "audit") -> dict[str, dict[str, Any]]:
+    invalid_modes = [mode for mode in modes if mode not in MODE_KEYS]
+    if invalid_modes:
+        raise ValueError(f"unsupported mode(s): {', '.join(invalid_modes)}")
     config = normalize_config(raw_config)
     events = EventGenerator.demand_events(config)
     result: dict[str, dict[str, Any]] = {}

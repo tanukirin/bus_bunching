@@ -796,7 +796,7 @@
                 <canvas id="waitChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
-                <div class="chart-title"><b>平均 / 95%総所要時間</b><span>待ち始めから降車まで 分</span></div>
+                <div class="chart-title"><b>補正平均 / 95%総所要時間</b><span>未完了乗客を含む 分</span></div>
                 <canvas id="totalTimeChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
@@ -1076,7 +1076,7 @@
 
     const SEED_AVERAGE_SD_KEYS = [
       "avgWaitMin", "p95WaitMin", "maxWaitMin", "recentAvgWaitMin", "recentP95WaitMin", "recentBoardedPassengers",
-      "avgTotalMin", "p95TotalMin",
+      "avgTotalMin", "p95TotalMin", "adjustedAvgTotalMin", "adjustedP95TotalMin", "adjustedTop5TotalMin",
       "bunchScore", "bunchDurationMin", "headwayErrorSum", "headwayRmseStops",
       "minHeadwayStops", "maxHeadwayStops", "avgDelayMin", "maxDelayMin",
       "totalBlockedDelayMin", "blockEvents", "maxBlockedDelayMin",
@@ -1553,6 +1553,7 @@
         this.blockedDuringBunchSec = 0;
         this.closePairEvents = 0;
         this.totalDwell = 0;
+        this.serviceStopCount = 0;
         this.totalSpringHoldSec = 0;
         this.maxSpringHoldSec = 0;
         this.springSkipAssistEvents = 0;
@@ -1847,6 +1848,7 @@
         bus.routeSegmentStart = bus.routePos;
         bus.pos = stop;
         if (dwell > 0) {
+          this.serviceStopCount++;
           this.occupyStop(stop, bus.id, dwell);
           bus.status = "dwelling";
           bus.dwellRemaining = dwell;
@@ -2058,6 +2060,91 @@
         return dist;
       }
 
+      stopsAhead(origin, dest) {
+        return circularForward(
+          positiveModulo(origin, this.config.stopCount),
+          positiveModulo(dest, this.config.stopCount),
+          this.config.stopCount
+        );
+      }
+
+      expectedStopToStopSec() {
+        const averageDwellSec = this.totalDwell / Math.max(1, this.serviceStopCount);
+        const expectedStopSec = this.config.baseTravelSec + (this.config.randomDelayMeanSec || 0) + averageDwellSec;
+        return { expectedStopSec, averageDwellSec };
+      }
+
+      busArrivalToStopSec(bus, stop, expectedStopSec) {
+        if (bus.status === "moving") {
+          const remaining = Math.max(0, bus.segmentRemaining);
+          return remaining + this.stopsAhead(bus.targetStop, stop) * expectedStopSec;
+        }
+        if (bus.status === "dwelling") {
+          const dwell = Math.max(0, bus.dwellRemaining);
+          if (bus.serviceStopId === stop) return dwell;
+          return dwell + this.stopsAhead(bus.pos, stop) * expectedStopSec;
+        }
+        if (bus.status === "blocked") {
+          let blockedWait = 0;
+          if (bus.blockedStopId != null) {
+            const berth = this.stops[bus.blockedStopId];
+            blockedWait = berth?.occupiedByBusId != null ? Math.max(0, berth.serviceEndTime - this.time) : 0;
+            if (bus.blockedStopId === stop) return blockedWait;
+            return blockedWait + this.stopsAhead(bus.blockedStopId, stop) * expectedStopSec;
+          }
+        }
+        return this.stopsAhead(bus.pos, stop) * expectedStopSec;
+      }
+
+      minBusArrivalToStopSec(stop, expectedStopSec) {
+        if (!this.buses.length) return 0;
+        return Math.min(...this.buses.map((bus) => this.busArrivalToStopSec(bus, stop, expectedStopSec)));
+      }
+
+      adjustedTotalTimesMin() {
+        const { expectedStopSec, averageDwellSec } = this.expectedStopToStopSec();
+        const idealHeadwaySec = (this.config.stopCount / Math.max(1, this.config.busCount)) * expectedStopSec;
+        const capacity = Math.max(1, this.config.capacity);
+        const values = [];
+        const seen = new Set();
+
+        for (const p of this.completed) {
+          if (p.alightTime == null) continue;
+          values.push(Math.max(0, p.alightTime - p.arrivalTime) / 60);
+          seen.add(p.id);
+        }
+
+        for (const bus of this.buses) {
+          for (const p of bus.onboard) {
+            if (seen.has(p.id)) continue;
+            const elapsed = Math.max(0, this.time - p.arrivalTime);
+            const remainingStops = this.stopsAhead(bus.pos, p.dest);
+            values.push((elapsed + remainingStops * expectedStopSec) / 60);
+            seen.add(p.id);
+          }
+        }
+
+        const minArrivalCache = new Map();
+        for (let origin = 0; origin < this.waiting.length; origin++) {
+          const queue = this.waiting[origin];
+          if (!queue.length) continue;
+          if (!minArrivalCache.has(origin)) {
+            minArrivalCache.set(origin, this.minBusArrivalToStopSec(origin, expectedStopSec));
+          }
+          const minBusArrival = minArrivalCache.get(origin);
+          const queuePenalty = Math.max(0, queue.length - capacity) / capacity * idealHeadwaySec;
+          for (const p of queue) {
+            if (seen.has(p.id)) continue;
+            const elapsed = Math.max(0, this.time - p.arrivalTime);
+            const tripStops = this.stopsAhead(p.origin, p.dest);
+            values.push((elapsed + minBusArrival + queuePenalty + tripStops * expectedStopSec) / 60);
+            seen.add(p.id);
+          }
+        }
+
+        return { values, expectedStopSec, averageDwellSec };
+      }
+
       absoluteStopAhead(bus, stop) {
         const lap = Math.floor(bus.routePos / this.config.stopCount);
         let target = lap * this.config.stopCount + stop;
@@ -2105,6 +2192,9 @@
           p95WaitMin: metrics.p95WaitMin,
           avgTotalMin: metrics.avgTotalMin,
           p95TotalMin: metrics.p95TotalMin,
+          adjustedAvgTotalMin: metrics.adjustedAvgTotalMin,
+          adjustedP95TotalMin: metrics.adjustedP95TotalMin,
+          adjustedTop5TotalMin: metrics.adjustedTop5TotalMin,
           recentAvgWaitMin: metrics.recentAvgWaitMin,
           recentP95WaitMin: metrics.recentP95WaitMin,
           recentBoardedPassengers: metrics.recentBoardedPassengers,
@@ -2131,6 +2221,8 @@
           .map((p) => (p.boardTime - p.arrivalTime) / 60);
         const rides = this.completed.map((p) => (p.alightTime - p.boardTime) / 60).filter(Number.isFinite);
         const totals = this.completed.map((p) => (p.alightTime - p.arrivalTime) / 60).filter(Number.isFinite);
+        const adjusted = this.adjustedTotalTimesMin();
+        const adjustedTotals = adjusted.values;
         const skipped = [...this.allPassengers.values()].filter((p) => p.skipCount > 0);
         const skippedBoarded = skipped.filter((p) => p.boardTime != null && p.firstSkipTime != null);
         const skipExtra = skippedBoarded.map((p) => (p.boardTime - p.firstSkipTime) / 60);
@@ -2150,6 +2242,7 @@
         const closeScore = closeSeverity * 20;
         const bunchScore = clamp(cvScore + minScore + closeScore, 0, 100);
         const loadByBus = this.buses.map((b) => b.onboard.length);
+        const onboardNow = sum(loadByBus);
         const delayByBus = this.buses.map((b) => b.delaySec / 60);
         const uniqueDenied = [...this.allPassengers.values()].filter((p) => p.deniedFullCount > 0).length;
         const deniedAfterSkip = [...this.allPassengers.values()].filter((p) => p.deniedAfterSkip > 0).length;
@@ -2166,6 +2259,8 @@
         return {
           timeMin: this.time / 60,
           completed: this.completed.length,
+          allPassengers: this.allPassengers.size,
+          onboardNow,
           waitingNow: sum(this.waiting.map((q) => q.length)),
           avgWaitMin: mean(waits),
           recentAvgWaitMin: recentWaits.length ? mean(recentWaits) : NaN,
@@ -2178,6 +2273,12 @@
           avgRideMin: mean(rides),
           avgTotalMin: mean(totals),
           p95TotalMin: pct(totals, 95),
+          adjustedAvgTotalMin: mean(adjustedTotals),
+          adjustedP95TotalMin: pct(adjustedTotals, 95),
+          adjustedTop5TotalMin: pct(adjustedTotals, 95),
+          expectedStopToStopSec: adjusted.expectedStopSec,
+          averageDwellSec: adjusted.averageDwellSec,
+          serviceStopCount: this.serviceStopCount,
           skippedPassengers: skipped.length,
           skipEvents: this.skipLog.length,
           skipAvgExtraMin: mean(skipExtra),
@@ -2517,8 +2618,8 @@
         const improve = (m, key) => p[key] > 0 ? (p[key] - m[key]) / p[key] * 100 : 0;
         const waitSkip = improve(s, "avgWaitMin");
         const waitSpring = improve(g, "avgWaitMin");
-        const totalSkip = improve(s, "avgTotalMin");
-        const totalSpring = improve(g, "avgTotalMin");
+        const totalSkip = improve(s, "adjustedAvgTotalMin");
+        const totalSpring = improve(g, "adjustedAvgTotalMin");
         const bunchSkip = improve(s, "bunchScore");
         const bunchSpring = improve(g, "bunchScore");
         const rmseSkip = improve(s, "headwayRmseStops");
@@ -2528,7 +2629,7 @@
         const springCaution = g.skipMaxExtraMin > 6 || g.multiSkippedPassengers > 0 || g.deniedAfterSkip > 0 || g.totalSpringHoldMin > 18;
         $("summary").innerHTML = [
           this.metric("待ち時間改善", `S ${fmt(waitSkip,0)}% / Sp ${fmt(waitSpring,0)}%`, `なし ${fmt(p.avgWaitMin)} / スキップ ${fmt(s.avgWaitMin)} / スプリング ${fmt(g.avgWaitMin)} 分`, Math.max(waitSkip, waitSpring) > 5 ? "good" : Math.max(waitSkip, waitSpring) < -3 ? "bad" : "warn"),
-          this.metric("総所要時間改善", `S ${fmt(totalSkip,0)}% / Sp ${fmt(totalSpring,0)}%`, `なし ${fmt(p.avgTotalMin)} / スキップ ${fmt(s.avgTotalMin)} / スプリング ${fmt(g.avgTotalMin)} 分`, Math.max(totalSkip, totalSpring) > 5 ? "good" : Math.max(totalSkip, totalSpring) < -3 ? "bad" : "warn"),
+          this.metric("補正総所要時間改善", `S ${fmt(totalSkip,0)}% / Sp ${fmt(totalSpring,0)}%`, `なし ${fmt(p.adjustedAvgTotalMin)} / スキップ ${fmt(s.adjustedAvgTotalMin)} / スプリング ${fmt(g.adjustedAvgTotalMin)} 分`, Math.max(totalSkip, totalSpring) > 5 ? "good" : Math.max(totalSkip, totalSpring) < -3 ? "bad" : "warn"),
           this.metric("団子削減", `S ${fmt(bunchSkip,0)}% / Sp ${fmt(bunchSpring,0)}%`, `団子度 ${fmt(p.bunchScore,0)} → ${fmt(s.bunchScore,0)} / ${fmt(g.bunchScore,0)}`, Math.max(bunchSkip, bunchSpring) > 8 ? "good" : "warn"),
           this.metric("RMSE改善", `S ${fmt(rmseSkip,0)}% / Sp ${fmt(rmseSpring,0)}%`, `車間RMSE ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)}`, Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn"),
           this.metric("最大車間", `${fmt(g.maxHeadwayStops)}停`, `なし ${fmt(p.maxHeadwayStops)} / スキップ ${fmt(s.maxHeadwayStops)}停`, g.maxHeadwayStops <= s.maxHeadwayStops ? "good" : "warn"),
@@ -2545,6 +2646,7 @@
         return [
           ["平均待ち", `${fmt(m.avgWaitMin)}分`],
           ["直近待ち", `${fmt(m.recentAvgWaitMin)}分`],
+          ["補正総所要", `${fmt(m.adjustedAvgTotalMin)}分`],
           ["95%待ち", `${fmt(m.p95WaitMin)}分`],
           ["最小車間", `${fmt(m.minHeadwayStops)}停`],
           ["最大車間", `${fmt(m.maxHeadwayStops)}停`],
@@ -2671,12 +2773,12 @@
           { name: "スプリング95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true }
         ], null, durationMin);
         this.drawLineChart($("totalTimeChart"), [
-          { name: "なし平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.avgTotalMin]) },
-          { name: "スキップ平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.avgTotalMin]) },
-          { name: "スプリング平均", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.avgTotalMin]) },
-          { name: "なし95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.p95TotalMin]), dash: true },
-          { name: "スキップ95%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.p95TotalMin]), dash: true },
-          { name: "スプリング95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.p95TotalMin]), dash: true }
+          { name: "なし補正平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.adjustedAvgTotalMin]) },
+          { name: "スキップ補正平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.adjustedAvgTotalMin]) },
+          { name: "スプリング補正平均", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.adjustedAvgTotalMin]) },
+          { name: "なし補正95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true },
+          { name: "スキップ補正95%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true },
+          { name: "スプリング補正95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true }
         ], null, durationMin);
         this.drawLineChart($("recentWaitChart"), [
           { name: "なし直近平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
@@ -2778,12 +2880,12 @@
         const lines = [];
         const waitSkip = improve(s, "avgWaitMin");
         const waitSpring = improve(g, "avgWaitMin");
-        const totalSkip = improve(s, "avgTotalMin");
-        const totalSpring = improve(g, "avgTotalMin");
+        const totalSkip = improve(s, "adjustedAvgTotalMin");
+        const totalSpring = improve(g, "adjustedAvgTotalMin");
         const rmseSkip = improve(s, "headwayRmseStops");
         const rmseSpring = improve(g, "headwayRmseStops");
         lines.push([Math.max(waitSkip, waitSpring) > 5 ? "good" : "warn", `平均待ち時間は、スキップ制御で${fmt(waitSkip,0)}%、スプリング法で${fmt(waitSpring,0)}%の変化です。`]);
-        lines.push([Math.max(totalSkip, totalSpring) > 5 ? "good" : "warn", `平均総所要時間は、待ち始めから目的地で降車するまでを測ります。スキップ制御で${fmt(totalSkip,0)}%、スプリング法で${fmt(totalSpring,0)}%の変化です。`]);
+        lines.push([Math.max(totalSkip, totalSpring) > 5 ? "good" : "warn", `補正総所要時間は、完了済み・乗車中・待機中の全発生乗客を含めます。スキップ制御で${fmt(totalSkip,0)}%、スプリング法で${fmt(totalSpring,0)}%の変化です。`]);
         lines.push([Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn", `等間隔性を表す headway RMSE は ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)} 停です。最小車間だけでなく最大車間も合わせて見てください。`]);
         lines.push([g.maxHeadwayStops <= s.maxHeadwayStops ? "good" : "warn", `最大車間は制御なし ${fmt(p.maxHeadwayStops)}、スキップ ${fmt(s.maxHeadwayStops)}、スプリング ${fmt(g.maxHeadwayStops)} 停です。空白区間の悪化抑制がスプリング法の主な確認点です。`]);
         const skipHarm = s.skippedPassengers + g.skippedPassengers;
@@ -2804,6 +2906,14 @@
           ["最大待ち時間 分", "maxWaitMin"],
           ["平均総所要時間 分", "avgTotalMin"],
           ["95%総所要時間 分", "p95TotalMin"],
+          ["補正平均総所要時間 分", "adjustedAvgTotalMin"],
+          ["補正95%総所要時間 分", "adjustedP95TotalMin"],
+          ["発生乗客数", "allPassengers"],
+          ["完了乗客数", "completed"],
+          ["乗車中人数", "onboardNow"],
+          ["待機中人数", "waitingNow"],
+          ["見込み停留所間秒", "expectedStopToStopSec"],
+          ["平均停車秒", "averageDwellSec"],
           ["団子度", "bunchScore"],
           ["最小車間 停", "minHeadwayStops"],
           ["最大車間 停", "maxHeadwayStops"],

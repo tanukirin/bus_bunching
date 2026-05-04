@@ -7,7 +7,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from .derived import write_visual_derivatives
-from .runner import run_experiment
+from .runner import PRIORITY_CHOICES, run_experiment
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--workers", default="auto", help="'auto' or a positive integer")
     run.add_argument("--chunk-size", type=int, default=None, help="seed chunk size per worker task")
     run.add_argument("--engine", default="fast", choices=["fast", "audit"], help="simulation engine")
+    run.add_argument("--priority", default="below-normal", choices=PRIORITY_CHOICES, help="process priority")
 
     summary = sub.add_parser("summarize", help="print a compact run summary")
     summary.add_argument("--run", required=True, help="run directory")
@@ -31,13 +32,21 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--seeds", type=int, default=50, help="seed count override")
     benchmark.add_argument("--workers", default="1", help="'auto' or a positive integer")
     benchmark.add_argument("--engine", default="fast", choices=["fast", "audit"], help="simulation engine")
+    benchmark.add_argument("--priority", default="below-normal", choices=PRIORITY_CHOICES, help="process priority")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
-        manifest = run_experiment(args.config, args.out, args.workers, args.chunk_size, engine=args.engine if hasattr(args, "engine") else "fast")
+        manifest = run_experiment(
+            args.config,
+            args.out,
+            args.workers,
+            args.chunk_size,
+            engine=args.engine if hasattr(args, "engine") else "fast",
+            priority=args.priority,
+        )
         print(json.dumps({k: manifest[k] for k in ["name", "elapsed_sec", "processed_units", "result_rows", "failure_count"]}, ensure_ascii=False, indent=2))
         return 0
     if args.command == "summarize":
@@ -65,7 +74,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
         out_dir = Path(tmp) / "run"
         config_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
         started = time.perf_counter()
-        manifest = run_experiment(config_path, out_dir, workers=args.workers, engine=args.engine)
+        manifest = run_experiment(config_path, out_dir, workers=args.workers, engine=args.engine, priority=args.priority)
         elapsed = time.perf_counter() - started
         print(
             json.dumps(
@@ -93,7 +102,7 @@ def print_summary(run_dir: Path, top: int) -> None:
     metric_rows = [
         r
         for r in rows
-        if r["mode"] in {"skip", "spring"} and r["metric"] in {"adjustedAvgTotalMin", "avgWaitMin", "top5WaitMin", "headwayRmseStops"}
+        if r["mode"] in {"skip", "spring"} and r["metric"] in {"adjustedAvgTotalMin", "adjustedTop5TotalMin", "avgWaitMin", "top5WaitMin"}
     ]
     print(f"Run: {manifest.get('name')}  scenarios={manifest.get('scenario_count')} seeds={manifest.get('seed_count')} workers={manifest.get('workers')}")
     print(f"Elapsed: {manifest.get('elapsed_sec', 0):.2f}s  failures={manifest.get('failure_count')}")

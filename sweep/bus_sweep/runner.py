@@ -27,10 +27,40 @@ SPRING_ONLY_PARAMS = {
     "springMinHoldSec",
 }
 
+PRIORITY_CHOICES = ("normal", "below-normal", "idle")
 
-def auto_workers() -> int:
-    cpus = os.cpu_count() or 1
-    return max(1, min(24, cpus - 4))
+
+def auto_workers(cpu_count: int | None = None) -> int:
+    cpus = cpu_count or os.cpu_count() or 1
+    if cpus <= 2:
+        return 1
+    return max(1, min(12, math.floor(cpus * 0.6)))
+
+
+def apply_process_priority(priority: str) -> str | None:
+    if priority not in PRIORITY_CHOICES:
+        raise ValueError(f"unsupported priority: {priority}")
+    if priority == "normal":
+        return None
+    try:
+        if platform.system() == "Windows":
+            priority_classes = {
+                "below-normal": 0x00004000,
+                "idle": 0x00000040,
+            }
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+            kernel32.SetPriorityClass.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+            kernel32.SetPriorityClass.restype = ctypes.c_int
+            handle = kernel32.GetCurrentProcess()
+            ok = kernel32.SetPriorityClass(handle, priority_classes[priority])
+            if not ok:
+                return f"SetPriorityClass failed: {ctypes.get_last_error()}"
+        else:
+            os.nice(5 if priority == "below-normal" else 10)
+    except Exception as exc:  # noqa: BLE001 - priority lowering is best effort.
+        return str(exc)
+    return None
 
 
 def chunked(values: list[int], size: int) -> list[list[int]]:
@@ -184,7 +214,14 @@ def run_spring_only_sweep_chunk(args: tuple[dict[str, Any], list[Scenario], list
     return {"rows": result_rows, "history": history_rows, "errors": errors, "seed_count": len(seeds) * len(scenarios), "scenario_id": "spring-only-sweep"}
 
 
-def run_experiment(config_path: str | Path, out_dir: str | Path, workers: str | int = "auto", chunk_size: int | None = None, engine: str = "fast") -> dict[str, Any]:
+def run_experiment(
+    config_path: str | Path,
+    out_dir: str | Path,
+    workers: str | int = "auto",
+    chunk_size: int | None = None,
+    engine: str = "fast",
+    priority: str = "below-normal",
+) -> dict[str, Any]:
     spec = load_json(config_path)
     out = ensure_dir(out_dir)
     progress_path = out / "progress.jsonl"
@@ -195,9 +232,13 @@ def run_experiment(config_path: str | Path, out_dir: str | Path, workers: str | 
     seeds = seed_sequence(spec.get("seeds") or {"base": base_config.get("seed", 1), "count": 1, "step": 101})
     scenarios = expand_sweep(spec.get("sweep") or [])
     modes = list(spec.get("modes") or MODE_KEYS)
+    invalid_modes = [mode for mode in modes if mode not in MODE_KEYS]
+    if invalid_modes:
+        raise ValueError(f"unsupported mode(s): {', '.join(invalid_modes)}")
     aggregate_history = bool((spec.get("history") or {}).get("aggregate", True))
     progress_interval_sec = max(0.1, float((spec.get("progress") or {}).get("intervalSec", 2.0)))
     worker_count = auto_workers() if workers == "auto" else max(1, int(workers))
+    priority_error = apply_process_priority(priority)
     chunk = chunk_size or max(1, min(50, math.ceil(len(seeds) / max(1, worker_count * 4))))
     scenario_params = {s.scenario_id: s.params for s in scenarios}
 
@@ -223,6 +264,8 @@ def run_experiment(config_path: str | Path, out_dir: str | Path, workers: str | 
         "sweep": spec.get("sweep") or [],
         "progress_interval_sec": progress_interval_sec,
         "engine": engine,
+        "priority": priority,
+        "priority_error": priority_error,
         "write_mode": "streaming",
         "baseConfig": base_config,
     }
@@ -246,7 +289,11 @@ def run_experiment(config_path: str | Path, out_dir: str | Path, workers: str | 
     append_jsonl(progress_path, {"event": "start", "total_units": total_units, "tasks": len(tasks), "workers": worker_count, "time": time.time()})
     write_json(out / "status.json", {"event": "start", "processed_units": 0, "total_units": total_units, "time": time.time()})
     try:
-        with ParquetRowWriter(out / "results.parquet") as results_writer, ParquetRowWriter(out / "history.parquet") as history_writer, futures.ProcessPoolExecutor(max_workers=worker_count) as executor:
+        with (
+            ParquetRowWriter(out / "results.parquet") as results_writer,
+            ParquetRowWriter(out / "history.parquet") as history_writer,
+            futures.ProcessPoolExecutor(max_workers=worker_count, initializer=apply_process_priority, initargs=(priority,)) as executor,
+        ):
             future_map = {executor.submit(worker_fn, task): task for task in tasks}
             for future in futures.as_completed(future_map):
                 payload = future.result()

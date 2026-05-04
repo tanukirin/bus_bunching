@@ -39,8 +39,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "springDamping": 0,
         "springMaxHoldSec": 180,
         "springMinHoldSec": 20,
-        "stopManeuverLossSec": 10,
-        "doorTimeSec": 3,
+        "fixedStopSec": 13,
         "boardingSetupSec": 3.5,
         "alightingSetupSec": 3.5,
         "crowdedExtraSec": 4,
@@ -92,13 +91,17 @@ def normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     c["capacity"] = int(number_with_default(c.get("capacity"), 36))
     c["boardTimeSec"] = number_with_default(c.get("boardTimeSec"), 3)
     c["alightTimeSec"] = number_with_default(c.get("alightTimeSec"), 3)
-    c["doorTimeSec"] = number_with_default(c.get("doorTimeSec"), 4)
-    c["stopManeuverLossSec"] = number_with_default(c.get("stopManeuverLossSec"), 14)
+    if "fixedStopSec" in c:
+        c["fixedStopSec"] = number_with_default(c.get("fixedStopSec"), 18)
+    else:
+        c["fixedStopSec"] = number_with_default(c.get("stopManeuverLossSec"), 14) + number_with_default(c.get("doorTimeSec"), 4)
+    c.pop("stopManeuverLossSec", None)
+    c.pop("doorTimeSec", None)
     c["boardingSetupSec"] = number_with_default(c.get("boardingSetupSec"), 2)
     c["alightingSetupSec"] = number_with_default(c.get("alightingSetupSec"), 1)
     c["crowdedExtraSec"] = number_with_default(c.get("crowdedExtraSec"), 5)
     c["crowdingThreshold"] = number_with_default(c.get("crowdingThreshold"), 0.75)
-    c["baseStopSec"] = c["doorTimeSec"]
+    c["baseStopSec"] = c["fixedStopSec"]
     c["sampleIntervalSec"] = 15
     c["waitWindowSec"] = 300
     c["arrivalQuantumSec"] = 5

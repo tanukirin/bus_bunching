@@ -10,44 +10,93 @@ from .storage import write_parquet
 
 HIGHER_IS_BETTER = {"completed", "minHeadwayStops", "recentBoardedPassengers"}
 
+METRIC_PRIORITY = {
+    "adjustedAvgTotalMin": 4,
+    "adjustedTop5TotalMin": 4,
+    "avgWaitMin": 4,
+    "top5WaitMin": 4,
+    "headwayRmseStops": 3,
+    "maxHeadwayStops": 3,
+    "minHeadwayStops": 3,
+    "completed": 3,
+    "waitingNow": 3,
+    "skippedPassengers": 3,
+    "skipAvgExtraMin": 3,
+    "skipMaxExtraMin": 3,
+    "totalSpringHoldMin": 3,
+    "totalBlockedDelayMin": 3,
+    "avgDelayMin": 3,
+    "maxDelayMin": 3,
+    "multiSkippedPassengers": 2,
+    "deniedAfterSkip": 2,
+    "avgTotalMin": 2,
+    "top5TotalMin": 2,
+    "medianWaitMin": 2,
+    "maxWaitMin": 2,
+    "over10Min": 2,
+    "headwayStdStops": 2,
+    "headwayCv": 2,
+    "avgStopOccupancyRate": 2,
+    "totalSkips": 2,
+    "maxSpringHoldSec": 2,
+    "recentAvgWaitMin": 2,
+    "recentTop5WaitMin": 2,
+    "bunchScore": 1,
+    "bunchStarts": 1,
+    "bunchDurationMin": 1,
+    "allPassengers": 1,
+    "onboardNow": 1,
+    "recentBoardedPassengers": 1,
+    "idealHeadwayStops": 1,
+    "timeMin": 1,
+    "headwayErrorSum": 1,
+    "springPositiveSignalAvg": 1,
+    "springNegativeSignalAvg": 1,
+    "springSignalAbsAvg": 1,
+    "avgBlockedDelayPerBusMin": 1,
+    "maxBlockedDelayMin": 1,
+}
+
 KEY_METRICS = [
     "adjustedAvgTotalMin",
     "adjustedTop5TotalMin",
-    "avgTotalMin",
     "avgWaitMin",
     "top5WaitMin",
-    "top5TotalMin",
     "headwayRmseStops",
     "maxHeadwayStops",
     "minHeadwayStops",
+    "completed",
+    "waitingNow",
     "skippedPassengers",
     "skipAvgExtraMin",
     "skipMaxExtraMin",
     "totalSpringHoldMin",
-    "maxSpringHoldSec",
-    "avgDelayMin",
     "totalBlockedDelayMin",
-    "completed",
-    "bunchScore",
+    "avgDelayMin",
+    "maxDelayMin",
+    "multiSkippedPassengers",
+    "deniedAfterSkip",
+    "avgTotalMin",
+    "top5TotalMin",
+    "medianWaitMin",
+    "maxWaitMin",
+    "over10Min",
+    "headwayStdStops",
+    "headwayCv",
+    "avgStopOccupancyRate",
+    "totalSkips",
+    "maxSpringHoldSec",
+    "recentAvgWaitMin",
+    "recentTop5WaitMin",
 ]
 
-SURFACE_METRICS = [
-    "adjustedAvgTotalMin",
-    "adjustedTop5TotalMin",
-    "avgTotalMin",
-    "avgWaitMin",
-    "top5WaitMin",
-    "headwayRmseStops",
-    "maxHeadwayStops",
-    "totalSpringHoldMin",
-]
+SURFACE_METRICS = [metric for metric, priority in METRIC_PRIORITY.items() if priority >= 3]
 
 DECISION_WEIGHTS = {
     "adjustedAvgTotalMin": 0.30,
-    "avgWaitMin": 0.25,
-    "top5WaitMin": 0.15,
-    "headwayRmseStops": 0.20,
-    "maxHeadwayStops": 0.10,
+    "adjustedTop5TotalMin": 0.20,
+    "avgWaitMin": 0.30,
+    "top5WaitMin": 0.20,
 }
 
 
@@ -150,7 +199,7 @@ def build_candidate_table(aggregate: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     candidates = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
     candidates["rank"] = candidates.index + 1
-    pareto_metrics = [metric for metric in ["adjustedAvgTotalMin", "headwayRmseStops"] if metric in candidates.columns]
+    pareto_metrics = [metric for metric in DECISION_WEIGHTS if metric in candidates.columns]
     candidates["pareto"] = pareto_flags(candidates, pareto_metrics) if pareto_metrics else True
     return candidates
 
