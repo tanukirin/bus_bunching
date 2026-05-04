@@ -7,7 +7,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from .derived import write_visual_derivatives
-from .runner import PRIORITY_CHOICES, run_experiment
+from .runner import PRIORITY_CHOICES, rename_completed_run_dir, run_experiment
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,11 +21,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--chunk-size", type=int, default=None, help="seed chunk size per worker task")
     run.add_argument("--engine", default="fast", choices=["fast", "audit"], help="simulation engine")
     run.add_argument("--priority", default="below-normal", choices=PRIORITY_CHOICES, help="process priority")
+    run.add_argument("--no-backup", action="store_true", help="do not move an existing output run directory aside before running")
+    run.add_argument("--backup-root", default=None, help="directory for automatic backups; defaults to <out parent>")
 
     summary = sub.add_parser("summarize", help="print a compact run summary")
     summary.add_argument("--run", required=True, help="run directory")
     summary.add_argument("--top", type=int, default=12, help="number of ranked rows")
     summary.add_argument("--no-derivatives", action="store_true", help="skip visual derivative parquet generation")
+    summary.add_argument("--no-rename", action="store_true", help="do not rename the completed run directory after summarizing")
 
     benchmark = sub.add_parser("benchmark", help="run a small throughput benchmark")
     benchmark.add_argument("--config", required=True, help="experiment JSON path")
@@ -46,14 +49,21 @@ def main(argv: list[str] | None = None) -> int:
             args.chunk_size,
             engine=args.engine if hasattr(args, "engine") else "fast",
             priority=args.priority,
+            backup_existing=not args.no_backup,
+            backup_root=args.backup_root,
         )
         print(json.dumps({k: manifest[k] for k in ["name", "elapsed_sec", "processed_units", "result_rows", "failure_count"]}, ensure_ascii=False, indent=2))
         return 0
     if args.command == "summarize":
+        run_dir = Path(args.run)
         if not args.no_derivatives:
-            counts = write_visual_derivatives(Path(args.run))
+            counts = write_visual_derivatives(run_dir)
             print("Visual derivatives:", json.dumps(counts, ensure_ascii=False))
-        print_summary(Path(args.run), args.top)
+        print_summary(run_dir, args.top)
+        if not args.no_rename:
+            renamed = rename_completed_run_dir(run_dir)
+            if renamed != run_dir:
+                print(f"Renamed run: {run_dir} -> {renamed}")
         return 0
     if args.command == "benchmark":
         return run_benchmark(args)

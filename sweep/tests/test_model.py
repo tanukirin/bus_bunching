@@ -13,7 +13,7 @@ sys.path.insert(0, str(SWEEP))
 
 from bus_sweep.config import PRESETS, normalize_config, seed_sequence  # noqa: E402
 from bus_sweep.model import EventGenerator, Passenger, Simulation, run_three_modes  # noqa: E402
-from bus_sweep.runner import auto_workers, run_experiment  # noqa: E402
+from bus_sweep.runner import auto_workers, backup_existing_run_dir, rename_completed_run_dir, run_experiment  # noqa: E402
 from bus_sweep.stats import AggregateStats  # noqa: E402
 from bus_sweep.sweep import expand_sweep, point_values, scenario_id  # noqa: E402
 
@@ -174,6 +174,90 @@ class ModelPortTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "unsupported mode"):
                 run_experiment(config_path, out_dir, workers=1)
+
+    def test_existing_run_dir_is_backed_up_with_sweep_name(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="bus_sweep_backup_") as tmp:
+            root = Path(tmp)
+            out_dir = root / "default"
+            out_dir.mkdir()
+            (out_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "name": "default experiment",
+                        "seed_count": 3,
+                        "scenario_count": 4,
+                        "sweep": [
+                            {"param": "springGainSecPerStop", "min": 20, "max": 60},
+                            {"param": "springDeadbandStops", "min": 0.8, "max": 1.6},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (out_dir / "results.parquet").write_bytes(b"old")
+            backup = backup_existing_run_dir(out_dir, {"sweep": []})
+            self.assertIsNotNone(backup)
+            assert backup is not None
+            self.assertFalse(out_dir.exists())
+            self.assertTrue((backup / "manifest.json").exists())
+            self.assertEqual(backup.parent, root)
+            self.assertFalse(backup.name.startswith("default__"))
+            self.assertFalse(backup.name.startswith("default-experiment__"))
+            self.assertTrue(backup.name.startswith("springGainSecPerStop-springDeadbandStops__"))
+            self.assertIn("springGainSecPerStop", backup.name)
+            self.assertIn("springDeadbandStops", backup.name)
+            self.assertIn("seeds3", backup.name)
+            self.assertIn("scenarios4", backup.name)
+
+    def test_existing_run_backup_rejects_unreadable_manifest(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="bus_sweep_bad_manifest_") as tmp:
+            out_dir = Path(tmp) / "default"
+            out_dir.mkdir()
+            (out_dir / "manifest.json").write_text("{not json", encoding="utf-8")
+            (out_dir / "results.parquet").write_bytes(b"old")
+            with self.assertRaisesRegex(ValueError, "manifest is unreadable"):
+                backup_existing_run_dir(out_dir, {"sweep": []})
+
+    def test_completed_run_is_renamed_for_dashboard_visibility(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="bus_sweep_rename_") as tmp:
+            root = Path(tmp)
+            run_dir = root / "default"
+            run_dir.mkdir()
+            (run_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "name": "default experiment",
+                        "finished_at": "2026-05-04T00:00:00+00:00",
+                        "seed_count": 2,
+                        "scenario_count": 3,
+                        "sweep": [{"param": "demandMultiplier"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            renamed = rename_completed_run_dir(run_dir)
+            self.assertFalse(run_dir.exists())
+            self.assertTrue((renamed / "manifest.json").exists())
+            self.assertEqual(renamed.parent, root)
+            self.assertTrue(renamed.name.startswith("demandMultiplier__"))
+            self.assertIn("demandMultiplier", renamed.name)
+            self.assertEqual(rename_completed_run_dir(renamed), renamed)
+
+    def test_unfinished_run_is_not_renamed(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="bus_sweep_unfinished_") as tmp:
+            run_dir = Path(tmp) / "default"
+            run_dir.mkdir()
+            (run_dir / "manifest.json").write_text(json.dumps({"name": "unfinished", "finished_at": None}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not finished"):
+                rename_completed_run_dir(run_dir)
 
 
 if __name__ == "__main__":

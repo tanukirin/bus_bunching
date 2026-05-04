@@ -4,6 +4,7 @@ import json
 import html
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pandas as pd
@@ -314,6 +315,32 @@ def metric_label(metric: str) -> str:
     return METRIC_LABELS.get(metric, metric)
 
 
+def export_label_maps(param_cols: list[str], metric_cols: list[str]) -> tuple[dict[str, str], dict[str, str]]:
+    entries = [
+        *[("param", col, param_label(col)) for col in param_cols],
+        *[("metric", metric, metric_label(metric)) for metric in metric_cols],
+    ]
+    duplicate_labels = {
+        label
+        for label, count in Counter(label for _, _, label in entries).items()
+        if count > 1
+    }
+    used: set[str] = set()
+    labels: dict[tuple[str, str], str] = {}
+    for kind, key, label in entries:
+        display_label = label
+        if label in duplicate_labels:
+            display_label = f"{'条件' if kind == 'param' else '実績'} {label}"
+        if display_label in used:
+            display_label = f"{display_label} ({key})"
+        used.add(display_label)
+        labels[(kind, key)] = display_label
+    return (
+        {col: labels[("param", col)] for col in param_cols},
+        {metric: labels[("metric", metric)] for metric in metric_cols},
+    )
+
+
 def metric_select_label(metric: str) -> str:
     category, _, _ = METRIC_GUIDE.get(metric, ("その他", "", ""))
     return f"[重視度{METRIC_PRIORITY.get(metric, 1)}][{category}] {metric_label(metric)}"
@@ -416,7 +443,8 @@ def scenario_mode_export_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
     metric_wide = metric_wide.merge(params, on="scenario_id", how="left")
     scenario_order = {scenario_id: i + 1 for i, scenario_id in enumerate(params["scenario_id"].astype(str))}
     metric_cols = [metric for metric in sorted_metrics(list(aggregate_df["metric"].unique())) if metric in metric_wide.columns]
-    ordered_cols = ["シナリオ", "方式", "条件", *[param_label(c) for c in param_cols], *[metric_label(c) for c in metric_cols], "内部ID"]
+    param_labels, metric_labels = export_label_maps(param_cols, metric_cols)
+    ordered_cols = ["シナリオ", "方式", "条件", *[param_labels[c] for c in param_cols], *[metric_labels[c] for c in metric_cols], "内部ID"]
 
     rows: list[dict[str, object]] = []
     for _, row in metric_wide.iterrows():
@@ -428,9 +456,9 @@ def scenario_mode_export_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
             "内部ID": scenario_id,
         }
         for col in param_cols:
-            out[param_label(col)] = row.get(col)
+            out[param_labels[col]] = row.get(col)
         for metric in metric_cols:
-            out[metric_label(metric)] = row.get(metric)
+            out[metric_labels[metric]] = row.get(metric)
         rows.append(out)
 
     table = pd.DataFrame(rows)

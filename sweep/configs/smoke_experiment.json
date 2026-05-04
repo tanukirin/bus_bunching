@@ -37,8 +37,8 @@
     "step": 101
   },
   "sweep": [
-    { "param": "springGainSecPerStop", "label": "スプリングゲイン（秒/停留所）", "min": 20, "max": 40, "points": 2 },
-    { "param": "springDeadbandStops", "label": "スプリング不感帯（停留所）", "min": 1.0, "max": 1.4, "points": 2 }
+    { "param": "springGainSecPerStop", "min": 20, "max": 40, "points": 2 },
+    { "param": "springDeadbandStops", "min": 1.0, "max": 1.4, "points": 2 }
   ],
   "modes": ["plain", "skip", "spring"],
   "history": {

@@ -14,6 +14,14 @@ python -m bus_sweep.cli summarize --run runs/default
 streamlit run bus_sweep/dashboard.py -- --runs runs
 ```
 
+`run` は既存の出力ディレクトリを上書きする前に、自動で `<outの親>` 直下へ退避します。たとえば `--out runs/default` の既存結果は、`runs/springGainSecPerStop-springDeadbandStops__seeds...__scenarios...__YYYYMMDD-HHMMSS` のような名前で保存されます。バックアップ名にはスイープパラメータ、seed数、シナリオ数、時刻を含めます。configの `name` はフォルダ名には使いません。
+
+バックアップを無効化する場合は `--no-backup`、保存先を変える場合は `--backup-root <dir>` を指定します。
+
+`summarize` は派生データを書き出して要約を表示した後、完了済みの `runs/default` を同じ命名規則のフォルダへリネームします。これにより、通常の `streamlit run bus_sweep/dashboard.py -- --runs runs` でバックアップ済み・確定済みのrunをそのまま選べます。リネームを止める場合は `summarize --no-rename` を指定します。
+
+Codexの動作確認用runは、通常結果と混ざらないように `runs/_codex/` 配下へ作成します。
+
 軽い動作確認には `configs/smoke_experiment.json` を使います。
 
 ```powershell
@@ -141,8 +149,8 @@ python -m bus_sweep.cli benchmark --config configs/default_experiment.json --see
 ```json
 {
   "sweep": [
-    { "param": "springGainSecPerStop", "label": "スプリングゲイン（秒/停留所）", "min": 20, "max": 60, "points": 3 },
-    { "param": "springDeadbandStops", "label": "スプリング不感帯（停留所）", "min": 0.8, "max": 1.6, "points": 3 }
+    { "param": "springGainSecPerStop", "min": 20, "max": 60, "points": 3 },
+    { "param": "springDeadbandStops", "min": 0.8, "max": 1.6, "points": 3 }
   ],
   "history": {
     "aggregate": false
@@ -153,14 +161,14 @@ python -m bus_sweep.cli benchmark --config configs/default_experiment.json --see
 }
 ```
 
-`param` はプログラムが読む内部名です。`label` は人間向けの説明なので、分かりやすい日本語を書いて構いません。
+`param` はプログラムが読む内部名です。`label` は省略できます。ダッシュボードやエクスポートでは既知の `param` に対して内蔵の日本語表示名を使います。
 
 `min` と `max` は両端を含み、`points` 個の等間隔データ点に展開されます。上の例では `20, 40, 60` と `0.8, 1.2, 1.6` になり、合計 `3 × 3 = 9` シナリオを評価します。
 
 個別の値を手で指定したい場合は、従来どおり `values` も使えます。
 
 ```json
-{ "param": "springMaxHoldSec", "label": "最大スプリング保持秒", "values": [60, 120, 180] }
+{ "param": "springMaxHoldSec", "values": [60, 120, 180] }
 ```
 
 ## 主なパラメータ名

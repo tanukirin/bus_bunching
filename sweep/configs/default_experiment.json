@@ -28,28 +28,22 @@
     "springGainSecPerStop": 42,
     "springDeadbandStops": 1.3,
     "springDamping": 0,
-    "springMaxHoldSec": 180,
-    "springMinHoldSec": 20
+    "springMaxHoldSec": 120,
+    "springMinHoldSec": 5
   },
   "seeds": {
     "base": 238592,
-    "count": 1000,
+    "count": 400,
     "step": 101
   },
   "sweep": [
     {
-      "param": "alightTimeSec",
-      "label": "降車秒数（秒/人）",
-      "min": 0.5,
-      "max": 10.0,
-      "points": 20
+      "param": "springMaxHoldSec",
+      "values": [30, 60, 90, 120, 180, 300]
     },
     {
-      "param": "alightingSetupSec",
-      "label": "降車発生時固定秒",
-      "min": 1.0,
-      "max": 10.0,
-      "points": 10
+      "param": "springMinHoldSec",
+      "values": [0, 5, 10, 20, 40, 60, 80]
     }
   ],
   "modes": ["plain", "skip", "spring"],

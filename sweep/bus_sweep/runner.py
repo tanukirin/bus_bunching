@@ -5,6 +5,8 @@ import ctypes
 import math
 import os
 import platform
+import re
+import shutil
 import subprocess
 import time
 import traceback
@@ -28,6 +30,18 @@ SPRING_ONLY_PARAMS = {
 }
 
 PRIORITY_CHOICES = ("normal", "below-normal", "idle")
+RUN_OUTPUT_FILES = {
+    "manifest.json",
+    "status.json",
+    "progress.jsonl",
+    "results.parquet",
+    "aggregate.parquet",
+    "history.parquet",
+    "metric_surfaces.parquet",
+    "mode_deltas.parquet",
+    "candidates.parquet",
+    "failures.json",
+}
 
 
 def auto_workers(cpu_count: int | None = None) -> int:
@@ -110,6 +124,102 @@ def machine_profile() -> dict[str, Any]:
         "memory_bytes": memory_bytes(),
         "note": "Discrete-event simulation uses CPU multiprocessing; GPU is reserved for browser/Plotly rendering.",
     }
+
+
+def slugify_part(value: Any, fallback: str = "run", max_len: int = 48) -> str:
+    text = str(value or fallback).strip()
+    text = re.sub(r"[^\w.-]+", "-", text, flags=re.UNICODE).strip("-_.")
+    if not text:
+        text = fallback
+    return text[:max_len].strip("-_.") or fallback
+
+
+def sweep_param_names(spec_or_manifest: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    sweep = spec_or_manifest.get("sweep") or []
+    if isinstance(sweep, list):
+        for item in sweep:
+            if isinstance(item, dict) and item.get("param"):
+                names.append(str(item["param"]))
+    return names
+
+
+def backup_label(source_dir: Path, fallback_spec: dict[str, Any]) -> str:
+    manifest_path = source_dir / "manifest.json"
+    source: dict[str, Any] = fallback_spec
+    if manifest_path.exists():
+        try:
+            source = load_json(manifest_path)
+        except Exception as exc:
+            raise ValueError(f"existing run manifest is unreadable: {manifest_path}") from exc
+    params = sweep_param_names(source) or sweep_param_names(fallback_spec)
+    param_part = "-".join(slugify_part(param, max_len=28) for param in params) if params else "no-sweep"
+    seed_count = source.get("seed_count")
+    if seed_count is None:
+        seed_count = (fallback_spec.get("seeds") or {}).get("count")
+    scenario_count = source.get("scenario_count")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    pieces = [slugify_part(param_part, "params", 80)]
+    if seed_count is not None:
+        pieces.append(f"seeds{seed_count}")
+    if scenario_count is not None:
+        pieces.append(f"scenarios{scenario_count}")
+    pieces.append(timestamp)
+    return "__".join(pieces)
+
+
+def should_backup_run_dir(path: Path) -> bool:
+    if not path.exists() or not path.is_dir():
+        return False
+    try:
+        children = list(path.iterdir())
+    except OSError:
+        return False
+    if not children:
+        return False
+    return any(child.name in RUN_OUTPUT_FILES for child in children) or (path / "manifest.json").exists()
+
+
+def backup_existing_run_dir(out_dir: str | Path, spec: dict[str, Any], backup_root: str | Path | None = None) -> Path | None:
+    out = Path(out_dir)
+    if not should_backup_run_dir(out):
+        return None
+    root = Path(backup_root) if backup_root is not None else out.parent
+    root.mkdir(parents=True, exist_ok=True)
+    base = backup_label(out, spec)
+    target = root / base
+    suffix = 1
+    while target.exists():
+        suffix += 1
+        target = root / f"{base}__{suffix}"
+    shutil.move(str(out), str(target))
+    return target
+
+
+def is_auto_named_run(path: Path) -> bool:
+    return re.search(r"__\d{8}-\d{6}(?:__\d+)?$", path.name) is not None
+
+
+def rename_completed_run_dir(run_dir: str | Path) -> Path:
+    run = Path(run_dir)
+    if is_auto_named_run(run):
+        return run
+    manifest_path = run / "manifest.json"
+    if not manifest_path.exists():
+        raise ValueError(f"run manifest not found: {manifest_path}")
+    try:
+        manifest = load_json(manifest_path)
+    except Exception as exc:
+        raise ValueError(f"run manifest is unreadable: {manifest_path}") from exc
+    if not manifest.get("finished_at"):
+        raise ValueError(f"run is not finished: {run}")
+    target = run.parent / backup_label(run, manifest)
+    suffix = 1
+    while target.exists():
+        suffix += 1
+        target = run.parent / f"{target.name}__{suffix}"
+    shutil.move(str(run), str(target))
+    return target
 
 
 def run_chunk(args: tuple[dict[str, Any], Scenario, list[int], list[str], bool, str]) -> dict[str, Any]:
@@ -221,8 +331,11 @@ def run_experiment(
     chunk_size: int | None = None,
     engine: str = "fast",
     priority: str = "below-normal",
+    backup_existing: bool = True,
+    backup_root: str | Path | None = None,
 ) -> dict[str, Any]:
     spec = load_json(config_path)
+    backup_path = backup_existing_run_dir(out_dir, spec, backup_root) if backup_existing else None
     out = ensure_dir(out_dir)
     progress_path = out / "progress.jsonl"
     if progress_path.exists():
@@ -266,6 +379,7 @@ def run_experiment(
         "engine": engine,
         "priority": priority,
         "priority_error": priority_error,
+        "backup_path": str(backup_path) if backup_path is not None else None,
         "write_mode": "streaming",
         "baseConfig": base_config,
     }
