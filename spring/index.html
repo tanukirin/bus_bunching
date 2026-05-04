@@ -42,7 +42,8 @@
       color: var(--ink);
       padding: 8px 11px;
       cursor: pointer;
-      line-height: 1;
+      line-height: 1.18;
+      min-height: 34px;
     }
 
     button.primary {
@@ -671,22 +672,22 @@
         <p>同じ需要・同じ乱数条件で、制御なし、距離基準スキップ制御、停留所保持＋補助スキップのスプリング法を同時比較します。</p>
       </div>
       <div class="toolbar">
-        <button id="playBtn" class="primary" title="再生または一時停止">再生</button>
-        <button id="stepBtn" title="1ステップ進む">1ステップ</button>
-        <button id="resetBtn" title="同じ条件でリセット">リセット</button>
+        <button id="playBtn" class="primary" title="アニメーションを再生または一時停止します">再生</button>
+        <button id="stepBtn" title="アニメーションを10秒だけ進めます">10秒進める</button>
+        <button id="resetBtn" title="現在の設定でシミュレーションを最初からやり直します">最初からやり直す</button>
         <div class="speed">
           <span>速度</span>
           <input id="speedRange" type="range" min="1" max="240" value="18">
           <b id="speedLabel">18x</b>
         </div>
-        <button id="exportJsonBtn" title="現在の単一シードのアニメーション結果をJSONで保存">アニメ結果JSON</button>
-        <button id="exportCsvBtn" title="現在の単一シードの主要指標をCSVで保存">アニメ指標CSV</button>
+        <button id="exportJsonBtn" title="現在の単一シードのアニメーション結果と履歴をJSONで保存します">単一シード結果を保存</button>
+        <button id="exportCsvBtn" title="現在の単一シードの主要指標をCSVで保存します">単一シード指標を保存</button>
       </div>
     </div>
 
     <div class="result-tabs" role="tablist" aria-label="結果表示">
       <button id="animationTab" class="tab-button active" type="button" role="tab" aria-selected="true">アニメーション結果</button>
-      <button id="seedAverageTab" class="tab-button" type="button" role="tab" aria-selected="false">シード平均</button>
+      <button id="seedAverageTab" class="tab-button" type="button" role="tab" aria-selected="false">シード平均結果</button>
     </div>
 
     <div id="summary" class="summary-grid"></div>
@@ -751,12 +752,14 @@
                   </div>
                 </div>
                 <div class="seed-average-actions">
-                  <button id="seedAverageRunBtn" class="primary">シード平均を実行</button>
-                  <button id="seedAverageCancelBtn" hidden>中止</button>
-                  <button id="seedAverageRandomBtn" title="シード平均の基準シードだけをランダムに変更します">新しいシード</button>
-                  <button id="seedAverageSyncBtn">現在の設定から更新</button>
-                  <button id="seedAverageExportJsonBtn" title="直近のシード平均結果をJSONで保存">シード平均JSON</button>
-                  <button id="seedAverageExportCsvBtn" title="直近のシード平均指標をCSVで保存">シード平均CSV</button>
+                  <button id="seedAverageRunBtn" class="primary" title="指定したシード数で3方式を高速計算し、平均とSDを表示します">平均計算を実行</button>
+                  <button id="seedAverageCancelBtn" title="実行中のシード平均計算を途中で止めます" hidden>計算を中止</button>
+                  <button id="seedAverageRandomBtn" title="シード平均の基準シードだけをランダムに変更します">平均用シードを変更</button>
+                  <button id="seedAverageSyncBtn" title="右側の設定欄にある現在のランダムシードを、シード平均の基準シードへ反映します">現在のシードを反映</button>
+                  <button id="seedAverageExportJsonBtn" title="直近のシード平均結果、履歴、SD、設定をJSONで保存します">平均結果を保存</button>
+                  <button id="seedAverageExportCsvBtn" title="直近のシード平均指標とSDをCSVで保存します">平均指標を保存</button>
+                  <button id="seedAverageImportJsonBtn" title="保存したシード平均JSONを読み込み、実行直後と同じ結果表示を復元します">平均結果を読み込む</button>
+                  <input id="seedAverageFileInput" type="file" accept="application/json,.json" hidden>
                 </div>
                 <div class="seed-average-status-row">
                   <span id="seedAverageStatus" class="experiment-status">未実行</span>
@@ -865,10 +868,10 @@
               <span id="settingsState" class="settings-state">反映済み</span>
             </div>
             <div class="settings-actions">
-              <button id="applyBtn" class="primary">設定を反映</button>
-              <button id="randomSeedBtn">新しいシード</button>
-              <button id="exportConfigBtn">設定JSON</button>
-              <button id="importConfigBtn">設定読込</button>
+              <button id="applyBtn" class="primary" title="入力した設定をシミュレーションへ反映し、最初からやり直します">入力設定を反映</button>
+              <button id="randomSeedBtn" title="ランダムシードを新しくして、同じ設定で別乱数のシミュレーションを開始します">シードをランダム変更</button>
+              <button id="exportConfigBtn" title="現在の入力設定だけをJSONで保存します。結果は含みません">設定を保存</button>
+              <button id="importConfigBtn" title="保存した設定JSONを読み込み、シミュレーション条件へ反映します">設定を読み込む</button>
               <input id="configFileInput" type="file" accept="application/json,.json">
             </div>
           </div>
@@ -1030,8 +1033,8 @@
           <div class="panel-header"><h2>軽量実験</h2></div>
           <div class="panel-body">
             <div class="experiment-row">
-              <button id="multiSeedBtn">シード平均タブを開く</button>
-              <button id="sweepBtn">しきい値スイープ</button>
+              <button id="multiSeedBtn" title="複数シード平均の計算・保存・読込パネルを開きます">シード平均を開く</button>
+              <button id="sweepBtn" title="後続車間しきい値を複数パターンで高速試算します">しきい値を試算</button>
             </div>
             <div id="experimentOutput" class="experiment-output">アニメーションとは別に高速計算します。</div>
           </div>
@@ -2412,6 +2415,8 @@
         });
         $("seedAverageExportJsonBtn").addEventListener("click", () => this.exportSeedAverageJson());
         $("seedAverageExportCsvBtn").addEventListener("click", () => this.exportSeedAverageCsv());
+        $("seedAverageImportJsonBtn").addEventListener("click", () => $("seedAverageFileInput").click());
+        $("seedAverageFileInput").addEventListener("change", (event) => this.importSeedAverageFile(event));
         $("seedAverageRandomBtn").addEventListener("click", () => {
           $("seedAverageBaseSeedInput").value = Math.floor(Math.random() * 999999) + 1;
           this.onSeedAverageParamInput();
@@ -2561,12 +2566,13 @@
         $("routePanel").hidden = this.activeResultView !== "animation";
         $("seedAverageInfoPanel").hidden = this.activeResultView !== "seedAverage";
         if (this.activeResultView === "seedAverage") {
-          this.renderSeedAveragePreview();
           if (this.seedAverageResult) {
             $("seedAverageCountBadge").textContent = `${this.seedAverageResult.seeds.length} seeds`;
+            $("seedAverageSeeds").textContent = `使用シード: ${formatSeedList(this.seedAverageResult.seeds)}`;
             $("seedAverageUsedSeeds").textContent = `使用シード: ${formatSeedList(this.seedAverageResult.seeds)}`;
             this.renderResultData(this.seedAverageResult);
           } else {
+            this.renderSeedAveragePreview();
             this.renderSeedAverageEmpty();
           }
           return;
@@ -2604,7 +2610,7 @@
           this.metric("使用予定", `${seeds.length}`, `${seeds[0]} → ${seeds[seeds.length - 1]}`, "warn"),
           this.metric("結果", "未実行", "実行後に平均値とSDを表示します", "warn"),
           this.metric("アニメーション", "非表示", "平均バス位置は定義しません", "warn"),
-          this.metric("エクスポート", "対応", "実行後にシード平均JSON/CSVを保存できます", "warn")
+          this.metric("入出力", "対応", "シード平均JSONを保存・読込できます", "warn")
         ].join("");
         this.clearCharts("シード平均を実行すると表示されます");
         $("comments").innerHTML = [
@@ -3103,6 +3109,104 @@
           }
         };
         this.download("bus-bunching-seed-average-results.json", JSON.stringify(payload, null, 2), "application/json");
+      }
+
+      importSeedAverageFile(event) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const payload = JSON.parse(String(reader.result || ""));
+            const result = this.extractSeedAverageResult(payload);
+            this.applyImportedSeedAverageResult(result);
+          } catch (error) {
+            window.alert(`シード平均結果JSONを読み込めませんでした。\n${error.message}`);
+          }
+        };
+        reader.onerror = () => window.alert("シード平均結果JSONを読み込めませんでした。");
+        reader.readAsText(file);
+      }
+
+      extractSeedAverageResult(payload) {
+        const source = payload?.seedAverage || payload;
+        if (!source || typeof source !== "object" || Array.isArray(source)) {
+          throw new Error("seedAverage オブジェクトが見つかりません。");
+        }
+        const configSource = payload?.config || source.config || {};
+        const config = normalizeConfig(configSource);
+        const seeds = Array.isArray(source.seeds)
+          ? source.seeds.map((seed) => Number(seed)).filter(Number.isFinite)
+          : [];
+        if (!seeds.length) {
+          throw new Error("seeds が見つかりません。");
+        }
+        const modeResult = (mode) => {
+          const modeSource = source[mode] || {};
+          const metrics = modeSource.metrics || source[`${mode}Metrics`];
+          const sd = modeSource.sd || source[`${mode}Sd`] || {};
+          const history = modeSource.history || source[`${mode}History`] || [];
+          if (!metrics || typeof metrics !== "object" || Array.isArray(metrics)) {
+            throw new Error(`${MODE_LABELS[mode]} の metrics が見つかりません。`);
+          }
+          return {
+            metrics: { ...metrics },
+            sd: sd && typeof sd === "object" && !Array.isArray(sd) ? { ...sd } : {},
+            history: Array.isArray(history) ? history.map((row) => ({ ...row })) : []
+          };
+        };
+        const plain = modeResult("plain");
+        const skip = modeResult("skip");
+        const spring = modeResult("spring");
+        return {
+          seeds,
+          plainMetrics: plain.metrics,
+          skipMetrics: skip.metrics,
+          springMetrics: spring.metrics,
+          plainSd: plain.sd,
+          skipSd: skip.sd,
+          springSd: spring.sd,
+          plainHistory: plain.history,
+          skipHistory: skip.history,
+          springHistory: spring.history,
+          stopCount: Number(source.stopCount) || config.stopCount,
+          durationMin: Number(source.durationMin) || config.durationMin,
+          config
+        };
+      }
+
+      applyImportedSeedAverageResult(result) {
+        this.seedAverageResult = result;
+        this.config = normalizeConfig(result.config);
+        this.setPresetToCustom(this.config.name || "読み込み結果");
+        applyConfigToInputs(this.config);
+        this.setSettingsDirty(false);
+        this.running = false;
+        $("playBtn").textContent = "再生";
+        this.demandEvents = EventGenerator.demandEvents(this.config);
+        this.plain = new Simulation({ ...this.config, controlMode: "none" }, "plain", this.demandEvents);
+        this.skip = new Simulation({ ...this.config, controlMode: "skip" }, "skip", this.demandEvents);
+        this.spring = new Simulation({ ...this.config, controlMode: "spring" }, "spring", this.demandEvents);
+        this.plain.sample();
+        this.skip.sample();
+        this.spring.sample();
+        $("seedAverageBaseSeedInput").value = result.seeds[0] || this.config.seed;
+        $("seedAverageCountInput").value = result.seeds.length;
+        $("seedAverageCountBadge").textContent = `${result.seeds.length} seeds`;
+        $("seedAverageSeeds").textContent = `使用シード: ${formatSeedList(result.seeds)}`;
+        $("seedAverageUsedSeeds").textContent = `読み込みシード: ${formatSeedList(result.seeds)}`;
+        $("seedAverageStatus").textContent = "読込完了";
+        $("seedAverageStatus").className = "experiment-status done";
+        $("seedAverageModeBadge").textContent = "読込結果";
+        $("seedAverageModeBadge").className = "badge green";
+        $("seedAverageCancelBtn").hidden = true;
+        const p = result.plainMetrics;
+        const s = result.skipMetrics;
+        const g = result.springMetrics;
+        $("experimentOutput").innerHTML = `シード平均読込: 待ち時間 ${fmt(p.avgWaitMin)}→${fmt(s.avgWaitMin)}/${fmt(g.avgWaitMin)}分、団子度 ${fmt(p.bunchScore,0)}→${fmt(s.bunchScore,0)}/${fmt(g.bunchScore,0)}、RMSE ${fmt(p.headwayRmseStops)}→${fmt(s.headwayRmseStops)}/${fmt(g.headwayRmseStops)}停。`;
+        this.setResultView("seedAverage");
+        this.renderResultData(result);
       }
 
       exportSeedAverageCsv() {

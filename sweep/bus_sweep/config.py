@@ -10,6 +10,8 @@ from typing import Any
 MODE_KEYS = ("plain", "skip", "spring")
 
 NOISE_MEAN_FACTOR = 0.24 * 0.5 + 0.76 * 0.22 * 0.5 + 0.035 * ((0.6 + 1.8) / 2)
+MIN_POSITIVE = 1e-9
+MIN_DURATION_MIN = 1 / 60
 
 PRESETS: dict[str, dict[str, Any]] = {
     "urban": {
@@ -70,36 +72,37 @@ def delay_mean_to_scale(mean_sec: float) -> float:
 
 def normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     c = copy.deepcopy(raw)
-    c["stopCount"] = int(clamp(round(number_with_default(c.get("stopCount"), 20)), 8, 28))
-    c["busCount"] = int(
-        clamp(round(number_with_default(c.get("busCount"), 5)), 3, min(10, c["stopCount"] - 2))
-    )
-    c["durationMin"] = number_with_default(c.get("durationMin"), 120)
+    c["stopCount"] = max(2, int(round(number_with_default(c.get("stopCount"), 20))))
+    c["busCount"] = max(1, int(round(number_with_default(c.get("busCount"), 5))))
+    c["durationMin"] = max(MIN_DURATION_MIN, number_with_default(c.get("durationMin"), 120))
     c["durationSec"] = round(c["durationMin"] * 60)
-    c["baseSpeedKmh"] = number_with_default(c.get("baseSpeedKmh"), 15)
-    c["stopDistanceKm"] = number_with_default(c.get("stopDistanceKm"), 0.3)
-    c["baseTravelSec"] = max(20.0, c["stopDistanceKm"] / max(4.0, c["baseSpeedKmh"]) * 3600)
+    c["baseSpeedKmh"] = max(MIN_POSITIVE, number_with_default(c.get("baseSpeedKmh"), 15))
+    c["stopDistanceKm"] = max(MIN_POSITIVE, number_with_default(c.get("stopDistanceKm"), 0.3))
+    c["baseTravelSec"] = max(MIN_POSITIVE, c["stopDistanceKm"] / c["baseSpeedKmh"] * 3600)
 
     legacy_scale = number_with_default(c.get("randomDelaySec"), 26)
     if not math.isfinite(number_with_default(c.get("randomDelayMeanSec"), math.nan)):
         c["randomDelayMeanSec"] = legacy_delay_scale_to_mean(c["baseTravelSec"], legacy_scale)
-    c["randomDelayMeanSec"] = clamp(number_with_default(c.get("randomDelayMeanSec"), 0), 0, 180)
+    c["randomDelayMeanSec"] = max(0.0, number_with_default(c.get("randomDelayMeanSec"), 0))
     c["randomDelayScaleSec"] = delay_mean_to_scale(c["randomDelayMeanSec"])
     c.pop("randomDelaySec", None)
 
-    c["demandMultiplier"] = number_with_default(c.get("demandMultiplier"), 0.8)
-    c["capacity"] = int(number_with_default(c.get("capacity"), 36))
-    c["boardTimeSec"] = number_with_default(c.get("boardTimeSec"), 3)
-    c["alightTimeSec"] = number_with_default(c.get("alightTimeSec"), 3)
+    c["demandMultiplier"] = max(0.0, number_with_default(c.get("demandMultiplier"), 0.8))
+    c["capacity"] = max(1, int(number_with_default(c.get("capacity"), 36)))
+    c["boardTimeSec"] = max(0.0, number_with_default(c.get("boardTimeSec"), 3))
+    c["alightTimeSec"] = max(0.0, number_with_default(c.get("alightTimeSec"), 3))
     if "fixedStopSec" in c:
-        c["fixedStopSec"] = number_with_default(c.get("fixedStopSec"), 18)
+        c["fixedStopSec"] = max(0.0, number_with_default(c.get("fixedStopSec"), 18))
     else:
-        c["fixedStopSec"] = number_with_default(c.get("stopManeuverLossSec"), 14) + number_with_default(c.get("doorTimeSec"), 4)
+        c["fixedStopSec"] = max(
+            0.0,
+            number_with_default(c.get("stopManeuverLossSec"), 14) + number_with_default(c.get("doorTimeSec"), 4),
+        )
     c.pop("stopManeuverLossSec", None)
     c.pop("doorTimeSec", None)
-    c["boardingSetupSec"] = number_with_default(c.get("boardingSetupSec"), 2)
-    c["alightingSetupSec"] = number_with_default(c.get("alightingSetupSec"), 1)
-    c["crowdedExtraSec"] = number_with_default(c.get("crowdedExtraSec"), 5)
+    c["boardingSetupSec"] = max(0.0, number_with_default(c.get("boardingSetupSec"), 2))
+    c["alightingSetupSec"] = max(0.0, number_with_default(c.get("alightingSetupSec"), 1))
+    c["crowdedExtraSec"] = max(0.0, number_with_default(c.get("crowdedExtraSec"), 5))
     c["crowdingThreshold"] = number_with_default(c.get("crowdingThreshold"), 0.75)
     c["baseStopSec"] = c["fixedStopSec"]
     c["sampleIntervalSec"] = 15
@@ -110,15 +113,15 @@ def normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     c["controlMode"] = raw.get("controlMode") or "none"
     c["seed"] = int(number_with_default(raw.get("seed"), 1)) or 1
     c["initialDelaySec"] = number_with_default(c.get("initialDelaySec"), 0)
-    c["distanceThresholdStops"] = clamp(number_with_default(c.get("distanceThresholdStops"), 1.8), 0.2, 3)
-    c["delayThresholdMin"] = clamp(number_with_default(c.get("delayThresholdMin"), 0), 0, 12)
-    c["followerLoadLimit"] = clamp(number_with_default(c.get("followerLoadLimit"), 0.9), 0.3, 1)
-    c["springGainSecPerStop"] = clamp(number_with_default(c.get("springGainSecPerStop"), 18), 0, 90)
-    c["springDeadbandStops"] = clamp(number_with_default(c.get("springDeadbandStops"), 0.6), 0, 4)
-    c["springDamping"] = clamp(number_with_default(c.get("springDamping"), 0.06), 0, 0.5)
-    c["springMaxHoldSec"] = clamp(number_with_default(c.get("springMaxHoldSec"), 45), 0, 180)
-    c["springMinHoldSec"] = clamp(number_with_default(c.get("springMinHoldSec"), 8), 0, 60)
-    c["hotspotMultiplier"] = number_with_default(c.get("hotspotMultiplier"), 1)
+    c["distanceThresholdStops"] = max(0.0, number_with_default(c.get("distanceThresholdStops"), 1.8))
+    c["delayThresholdMin"] = max(0.0, number_with_default(c.get("delayThresholdMin"), 0))
+    c["followerLoadLimit"] = max(0.0, number_with_default(c.get("followerLoadLimit"), 0.9))
+    c["springGainSecPerStop"] = max(0.0, number_with_default(c.get("springGainSecPerStop"), 18))
+    c["springDeadbandStops"] = max(0.0, number_with_default(c.get("springDeadbandStops"), 0.6))
+    c["springDamping"] = max(0.0, number_with_default(c.get("springDamping"), 0.06))
+    c["springMaxHoldSec"] = max(0.0, number_with_default(c.get("springMaxHoldSec"), 45))
+    c["springMinHoldSec"] = max(0.0, number_with_default(c.get("springMinHoldSec"), 8))
+    c["hotspotMultiplier"] = max(0.0, number_with_default(c.get("hotspotMultiplier"), 1))
     hotspot_stops = c.get("hotspotStops") or []
     c["hotspotStops"] = [int(n) for n in hotspot_stops if isinstance(n, (int, float)) and 0 <= int(n) < c["stopCount"]]
     c["protectHotspotStops"] = raw.get("protectHotspotStops") is True or raw.get("protectHotspotStops") == "true"

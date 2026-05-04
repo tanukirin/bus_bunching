@@ -33,17 +33,19 @@
   },
   "seeds": {
     "base": 238592,
-    "count": 400,
+    "count": 1000,
     "step": 101
   },
   "sweep": [
     {
-      "param": "springMaxHoldSec",
-      "values": [30, 60, 90, 120, 180, 300]
+      "param": "busCount",
+      "label": "バス台数",
+      "values": [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15]
     },
     {
-      "param": "springMinHoldSec",
-      "values": [0, 5, 10, 20, 40, 60, 80]
+      "param": "demandMultiplier",
+      "label": "需要倍率",
+      "values": [0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0]
     }
   ],
   "modes": ["plain", "skip", "spring"],

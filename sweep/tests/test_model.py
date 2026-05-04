@@ -109,6 +109,91 @@ class ModelPortTests(unittest.TestCase):
         self.assertNotIn("stopManeuverLossSec", config)
         self.assertNotIn("doorTimeSec", config)
 
+    def test_parameter_upper_bounds_are_not_clamped(self) -> None:
+        config = normalize_config(
+            {
+                "stopCount": 60,
+                "busCount": 40,
+                "randomDelayMeanSec": 999,
+                "distanceThresholdStops": 25,
+                "delayThresholdMin": 90,
+                "followerLoadLimit": 2.5,
+                "springGainSecPerStop": 150,
+                "springDeadbandStops": 12,
+                "springDamping": 2,
+                "springMaxHoldSec": 600,
+                "springMinHoldSec": 300,
+            }
+        )
+        self.assertEqual(config["stopCount"], 60)
+        self.assertEqual(config["busCount"], 40)
+        self.assertEqual(config["randomDelayMeanSec"], 999)
+        self.assertEqual(config["distanceThresholdStops"], 25)
+        self.assertEqual(config["delayThresholdMin"], 90)
+        self.assertEqual(config["followerLoadLimit"], 2.5)
+        self.assertEqual(config["springGainSecPerStop"], 150)
+        self.assertEqual(config["springDeadbandStops"], 12)
+        self.assertEqual(config["springDamping"], 2)
+        self.assertEqual(config["springMaxHoldSec"], 600)
+        self.assertEqual(config["springMinHoldSec"], 300)
+
+    def test_parameter_lower_bounds_prevent_invalid_runtime_values(self) -> None:
+        config = normalize_config(
+            {
+                "stopCount": 1,
+                "busCount": 0,
+                "durationMin": -5,
+                "baseSpeedKmh": 0,
+                "stopDistanceKm": -1,
+                "capacity": 0,
+                "demandMultiplier": -1,
+                "boardTimeSec": -1,
+                "alightTimeSec": -1,
+                "fixedStopSec": -1,
+                "boardingSetupSec": -1,
+                "alightingSetupSec": -1,
+                "crowdedExtraSec": -1,
+                "randomDelayMeanSec": -1,
+                "distanceThresholdStops": -1,
+                "delayThresholdMin": -1,
+                "followerLoadLimit": -1,
+                "springGainSecPerStop": -1,
+                "springDeadbandStops": -1,
+                "springDamping": -1,
+                "springMaxHoldSec": -1,
+                "springMinHoldSec": -1,
+                "hotspotMultiplier": -1,
+            }
+        )
+        self.assertEqual(config["stopCount"], 2)
+        self.assertEqual(config["busCount"], 1)
+        self.assertGreater(config["durationMin"], 0)
+        self.assertGreater(config["durationSec"], 0)
+        self.assertGreater(config["baseSpeedKmh"], 0)
+        self.assertGreater(config["stopDistanceKm"], 0)
+        self.assertGreater(config["baseTravelSec"], 0)
+        for key in [
+            "demandMultiplier",
+            "boardTimeSec",
+            "alightTimeSec",
+            "fixedStopSec",
+            "boardingSetupSec",
+            "alightingSetupSec",
+            "crowdedExtraSec",
+            "randomDelayMeanSec",
+            "distanceThresholdStops",
+            "delayThresholdMin",
+            "followerLoadLimit",
+            "springGainSecPerStop",
+            "springDeadbandStops",
+            "springDamping",
+            "springMaxHoldSec",
+            "springMinHoldSec",
+            "hotspotMultiplier",
+        ]:
+            self.assertEqual(config[key], 0)
+        self.assertEqual(config["capacity"], 1)
+
     def test_recent_nan_is_not_averaged_as_zero(self) -> None:
         stats = AggregateStats()
         stats.add_metric_row("s1", "plain", {"recentAvgWaitMin": math.nan, "avgWaitMin": 1.0})

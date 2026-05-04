@@ -237,7 +237,7 @@ class Simulation:
                 targetStop=(stop + 1) % self.config["stopCount"],
                 status="dwelling" if initial_delay else "moving",
                 dwellRemaining=self.config["initialDelaySec"] if initial_delay else 0,
-                segmentRemaining=max(1, self.config["baseTravelSec"] * (1 - (route_pos - route_segment_start))),
+                segmentRemaining=max(1e-9, self.config["baseTravelSec"] * (1 - (route_pos - route_segment_start))),
                 segmentDuration=self.config["baseTravelSec"],
                 delaySec=self.config["initialDelaySec"] if i == 0 else 0,
                 serviceStopId=stop if initial_delay else None,
@@ -258,7 +258,7 @@ class Simulation:
             bus.segmentIndex += 1
         route_start = math.floor(bus.routePos) if math.isfinite(bus.routePos) else from_stop
         circular_from = int(positive_modulo(route_start, self.config["stopCount"]))
-        duration = max(18.0, self.config["baseTravelSec"] + EventGenerator.travel_noise(self.config, circular_from, self.time))
+        duration = max(1e-9, self.config["baseTravelSec"] + EventGenerator.travel_noise(self.config, circular_from, self.time))
         bus.routeSegmentStart = route_start
         bus.fromStop = circular_from
         bus.targetStop = int(positive_modulo(route_start + 1, self.config["stopCount"]))
