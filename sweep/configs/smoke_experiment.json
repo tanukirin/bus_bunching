@@ -29,7 +29,8 @@
     "springDeadbandStops": 1.2,
     "springDamping": 0,
     "springMaxHoldSec": 180,
-    "springMinHoldSec": 20
+    "springMinHoldSec": 20,
+    "forbidHoldingWhenFull": true
   },
   "seeds": {
     "base": 238592,

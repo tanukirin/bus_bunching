@@ -41,6 +41,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "springDamping": 0,
         "springMaxHoldSec": 180,
         "springMinHoldSec": 20,
+        "forbidHoldingWhenFull": True,
         "fixedStopSec": 13,
         "boardingSetupSec": 3.5,
         "alightingSetupSec": 3.5,
@@ -121,6 +122,8 @@ def normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     c["springDamping"] = max(0.0, number_with_default(c.get("springDamping"), 0.06))
     c["springMaxHoldSec"] = max(0.0, number_with_default(c.get("springMaxHoldSec"), 45))
     c["springMinHoldSec"] = max(0.0, number_with_default(c.get("springMinHoldSec"), 8))
+    raw_forbid_holding = raw.get("forbidHoldingWhenFull", True)
+    c["forbidHoldingWhenFull"] = str(raw_forbid_holding).lower() not in {"false", "0", "no", "off"}
     c["hotspotMultiplier"] = max(0.0, number_with_default(c.get("hotspotMultiplier"), 1))
     hotspot_stops = c.get("hotspotStops") or []
     c["hotspotStops"] = [int(n) for n in hotspot_stops if isinstance(n, (int, float)) and 0 <= int(n) < c["stopCount"]]

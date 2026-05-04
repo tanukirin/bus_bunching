@@ -44,12 +44,12 @@ METRIC_ORDER = [
     "blockedDuringBunchMin",
     "totalStopOccupiedMin",
     "totalDwellMin",
-    "skipEvents",
+    "controlSkipEvents",
     "fullPassEvents",
-    "uniqueDeniedFull",
+    "fullDeniedPassengers",
     "springHoldEvents",
     "avgSpringHoldSec",
-    "springSkipAssistEvents",
+    "springControlSkipAssistEvents",
     "springInterventionCount",
 ]
 
@@ -79,11 +79,14 @@ LOWER_IS_BETTER = {
     "bunchScore",
     "headwayRmseStops",
     "maxHeadwayStops",
-    "skippedPassengers",
-    "skipAvgExtraMin",
-    "skipMaxExtraMin",
-    "multiSkippedPassengers",
-    "deniedAfterSkip",
+    "deniedPassengers",
+    "deniedAvgExtraMin",
+    "deniedMaxExtraMin",
+    "controlSkippedPassengers",
+    "controlSkipAvgExtraMin",
+    "controlSkipMaxExtraMin",
+    "multiControlSkippedPassengers",
+    "fullDeniedAfterControlSkipPassengers",
     "totalSpringHoldMin",
     "maxSpringHoldSec",
     "avgDelayMin",
@@ -95,7 +98,7 @@ LOWER_IS_BETTER = {
     "over10Min",
     "headwayStdStops",
     "headwayCv",
-    "totalSkips",
+    "totalControlSkipPassengerEvents",
     "maxBlockedDelayMin",
     "avgBlockedDelayPerBusMin",
 }
@@ -155,7 +158,10 @@ METRIC_LABELS = {
     "completed": "完了乗客数",
     "allPassengers": "発生済み乗客数",
     "onboardNow": "乗車中人数",
-    "deniedAfterSkip": "スキップ後満員影響人数",
+    "deniedPassengers": "乗車不可影響人数",
+    "deniedAvgExtraMin": "乗車不可平均追加待ち",
+    "deniedMaxExtraMin": "乗車不可最大追加待ち",
+    "fullDeniedAfterControlSkipPassengers": "制御スキップ後満員影響人数",
     "fullPassEvents": "満員通過回数",
     "headwayCv": "車間CV",
     "headwayErrorSum": "車間誤差二乗和",
@@ -170,30 +176,30 @@ METRIC_LABELS = {
     "maxWaitMin": "最大待ち時間",
     "medianWaitMin": "中央値待ち時間",
     "minHeadwayStops": "最小車間",
-    "multiSkippedPassengers": "複数回スキップ人数",
+    "multiControlSkippedPassengers": "複数回制御スキップ人数",
     "over10Min": "10分以上待ち人数",
     "top5TotalMin": "上位5%総所要時間",
     "top5WaitMin": "上位5%待ち時間",
     "recentAvgWaitMin": "直近平均待ち時間",
     "recentBoardedPassengers": "直近乗車人数",
     "recentTop5WaitMin": "直近上位5%待ち時間",
-    "skipAvgExtraMin": "スキップ平均追加待ち",
-    "skipEvents": "スキップ回数",
-    "skipMaxExtraMin": "スキップ最大追加待ち",
-    "skippedPassengers": "スキップ人数",
+    "controlSkipAvgExtraMin": "制御スキップ平均追加待ち",
+    "controlSkipEvents": "制御スキップ回数",
+    "controlSkipMaxExtraMin": "制御スキップ最大追加待ち",
+    "controlSkippedPassengers": "制御スキップ人数",
     "springHoldEvents": "スプリング保持回数",
     "springInterventionCount": "スプリング介入回数",
     "springNegativeSignalAvg": "負スプリング信号平均",
     "springPositiveSignalAvg": "正スプリング信号平均",
     "springSignalAbsAvg": "スプリング信号絶対平均",
-    "springSkipAssistEvents": "補助スキップ回数",
+    "springControlSkipAssistEvents": "補助スキップ回数",
     "timeMin": "時刻",
     "totalBlockedDelayMin": "前車待ち遅延累計",
     "totalDwellMin": "停車時間累計",
-    "totalSkips": "総スキップ数",
+    "totalControlSkipPassengerEvents": "総スキップ数",
     "totalSpringHoldMin": "スプリング保持累計",
     "totalStopOccupiedMin": "停留所占有累計",
-    "uniqueDeniedFull": "満員影響人数",
+    "fullDeniedPassengers": "満員影響人数",
     "waitingNow": "待機中人数",
     "expectedStopToStopSec": "推定1停留所移動秒",
     "averageDwellSec": "平均停車秒",
@@ -236,19 +242,22 @@ METRIC_GUIDE = {
     "avgStopOccupancyRate": ("停留所容量", "小さいほど良い", "停留所が占有されている割合。保持が停留所を塞がないか確認。"),
     "totalStopOccupiedMin": ("停留所容量", "小さいほど良い", "停留所占有時間の累計。停留所負荷の総量。"),
     "totalDwellMin": ("停留所容量", "小さいほど良い", "全バスの停車時間累計。需要処理・保持の重さを見る。"),
-    "skippedPassengers": ("副作用", "小さいほど良い", "スキップで乗車を見送られた人数。利用者負担の代表指標。"),
-    "skipEvents": ("副作用", "小さいほど良い", "スキップ発動回数。施策の介入頻度。"),
-    "skipAvgExtraMin": ("副作用", "小さいほど良い", "スキップ対象者の平均追加待ち。公平性で重要。"),
-    "skipMaxExtraMin": ("副作用", "小さいほど良い", "スキップ対象者の最大追加待ち。苦情リスクを見る。"),
-    "multiSkippedPassengers": ("副作用", "小さいほど良い", "複数回スキップされた人数。避けたい副作用。"),
-    "deniedAfterSkip": ("副作用", "小さいほど良い", "スキップ後に満員で乗れなかった人数。かなり悪い副作用。"),
+    "deniedPassengers": ("利用者", "小さいほど良い", "制御スキップまたは満員で、一度以上来たバスに乗れなかった人数。利用者負担の代表指標。"),
+    "deniedAvgExtraMin": ("利用者", "小さいほど良い", "乗車不可を受けた人のうち実際に乗車できた人について、初回乗車不可から実乗車までの平均時間。"),
+    "deniedMaxExtraMin": ("利用者", "小さいほど良い", "乗車不可を受けた人のうち実際に乗車できた人について、初回乗車不可から実乗車までの最大時間。"),
+    "controlSkippedPassengers": ("副作用", "小さいほど良い", "制御スキップで乗車を見送られた人数。制御の副作用を見る指標。"),
+    "controlSkipEvents": ("副作用", "小さいほど良い", "スキップ発動回数。施策の介入頻度。"),
+    "controlSkipAvgExtraMin": ("副作用", "小さいほど良い", "スキップ対象者の平均追加待ち。公平性で重要。"),
+    "controlSkipMaxExtraMin": ("副作用", "小さいほど良い", "スキップ対象者の最大追加待ち。苦情リスクを見る。"),
+    "multiControlSkippedPassengers": ("副作用", "小さいほど良い", "複数回スキップされた人数。避けたい副作用。"),
+    "fullDeniedAfterControlSkipPassengers": ("副作用", "小さいほど良い", "スキップ後に満員で乗れなかった人数。かなり悪い副作用。"),
     "fullPassEvents": ("副作用", "小さいほど良い", "満員通過回数。容量不足の兆候。"),
-    "uniqueDeniedFull": ("副作用", "小さいほど良い", "満員の影響を受けた人数。容量不足の利用者影響。"),
+    "fullDeniedPassengers": ("副作用", "小さいほど良い", "満員の影響を受けた人数。容量不足の利用者影響。"),
     "springHoldEvents": ("制御負荷", "少ないほど良いとは限らない", "スプリング保持回数。介入量の把握に使う。"),
     "totalSpringHoldMin": ("制御負荷", "過大なら悪い", "スプリング保持累計。待ち改善との釣り合いを見る。"),
     "avgSpringHoldSec": ("制御負荷", "過大なら悪い", "1回あたり平均保持秒。現実運用しやすさを見る。"),
     "maxSpringHoldSec": ("制御負荷", "小さいほど現実的", "最大保持秒。乗客・運転士が許容できるか確認。"),
-    "springSkipAssistEvents": ("制御負荷", "小さいほど説明しやすい", "スプリング補助スキップ回数。副作用と合わせて見る。"),
+    "springControlSkipAssistEvents": ("制御負荷", "小さいほど説明しやすい", "スプリング補助スキップ回数。副作用と合わせて見る。"),
     "springInterventionCount": ("制御負荷", "少ないほど説明しやすい", "保持と補助スキップの合計介入回数。"),
     "springPositiveSignalAvg": ("診断", "単独評価しない", "前が空き後ろが近い信号の平均。制御挙動の診断用。"),
     "springNegativeSignalAvg": ("診断", "単独評価しない", "前が近く後ろが空く信号の平均。保持判断の診断用。"),
@@ -260,7 +269,7 @@ METRIC_GUIDE = {
     "timeMin": ("品質確認", "評価対象外", "シミュレーション上の現在時刻。採用判断には通常使わない。"),
     "idealHeadwayStops": ("品質確認", "評価対象外", "理想車間。条件確認用で、最適化対象ではない。"),
     "headwayErrorSum": ("運行安定", "小さいほど良い", "車間誤差の二乗和。RMSEの元になる指標。"),
-    "totalSkips": ("副作用", "小さいほど良い", "バス側から見た総スキップ数。skippedPassengersと合わせて見る。"),
+    "totalControlSkipPassengerEvents": ("副作用", "小さいほど良い", "バス側から見た総スキップ数。controlSkippedPassengersと合わせて見る。"),
 }
 
 PARAM_LABELS = {
@@ -615,8 +624,11 @@ def decision_display(df: pd.DataFrame) -> pd.DataFrame:
         "top5TotalMin_improvement_pct",
         "maxHeadwayStops",
         "maxHeadwayStops_improvement_pct",
-        "skippedPassengers",
-        "skipAvgExtraMin",
+        "deniedPassengers",
+        "deniedAvgExtraMin",
+        "deniedMaxExtraMin",
+        "controlSkippedPassengers",
+        "controlSkipAvgExtraMin",
         "totalSpringHoldMin",
         "maxSpringHoldSec",
         "avgDelayMin",
@@ -646,8 +658,11 @@ def decision_display(df: pd.DataFrame) -> pd.DataFrame:
         "top5TotalMin_improvement_pct": "上位5%総所要改善率",
         "maxHeadwayStops": "最大車間",
         "maxHeadwayStops_improvement_pct": "最大車間改善率",
-        "skippedPassengers": "スキップ人数",
-        "skipAvgExtraMin": "スキップ平均追加待ち",
+        "deniedPassengers": "乗車不可影響人数",
+        "deniedAvgExtraMin": "乗車不可平均追加待ち",
+        "deniedMaxExtraMin": "乗車不可最大追加待ち",
+        "controlSkippedPassengers": "制御スキップ人数",
+        "controlSkipAvgExtraMin": "制御スキップ平均追加待ち",
         "totalSpringHoldMin": "保持累計分",
         "maxSpringHoldSec": "最大保持秒",
         "avgDelayMin": "平均遅延",
@@ -789,8 +804,8 @@ def build_candidate_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
             warnings.append("最大保持120秒超")
         if pd.notna(spring.get("totalSpringHoldMin")) and spring.get("totalSpringHoldMin") > 60:
             warnings.append("保持累計60分超")
-        if skip is not None and pd.notna(spring.get("skippedPassengers")) and pd.notna(skip.get("skippedPassengers")):
-            if spring.get("skippedPassengers") > skip.get("skippedPassengers") * 0.5:
+        if skip is not None and pd.notna(spring.get("controlSkippedPassengers")) and pd.notna(skip.get("controlSkippedPassengers")):
+            if spring.get("controlSkippedPassengers") > skip.get("controlSkippedPassengers") * 0.5:
                 warnings.append("スキップ人数がskipの50%超")
 
         if strong_warnings:
@@ -888,7 +903,7 @@ def format_candidate_table(df: pd.DataFrame) -> pd.DataFrame:
         "headwayRmse_vs_plain_pct": "制御なし比 RMSE改善",
         "headwayRmse_vs_skip_pct": "skip比 RMSE改善",
         "maxHeadwayStops": "最大車間",
-        "skippedPassengers": "スキップ人数",
+        "controlSkippedPassengers": "スキップ人数",
         "totalSpringHoldMin": "保持累計分",
         "maxSpringHoldSec": "最大保持秒",
     }
@@ -960,7 +975,7 @@ def candidate_table_figure(df: pd.DataFrame) -> go.Figure:
         "平均待ち時間": ("avgWaitMin", False),
         "車間RMSE": ("headwayRmseStops", False),
         "最大車間": ("maxHeadwayStops", False),
-        "スキップ人数": ("skippedPassengers", False),
+        "スキップ人数": ("controlSkippedPassengers", False),
         "保持累計分": ("totalSpringHoldMin", False),
         "最大保持秒": ("maxSpringHoldSec", False),
         "制御なし比 補正総所要改善": ("adjustedAvgTotal_vs_plain_pct", True),
@@ -1436,7 +1451,7 @@ with portfolio_tab:
             "avgWaitMin": ":.2f",
             "avgTotalMin": ":.2f",
             "headwayRmseStops": ":.2f",
-            "skippedPassengers": ":.1f",
+            "controlSkippedPassengers": ":.1f",
             "totalSpringHoldMin": ":.1f",
             "注意理由": True,
         }
@@ -1458,7 +1473,7 @@ with portfolio_tab:
                 "avgWaitMin": "平均待ち時間",
                 "avgTotalMin": "平均総所要時間",
                 "headwayRmseStops": "車間RMSE",
-                "skippedPassengers": "スキップ人数",
+                "controlSkippedPassengers": "スキップ人数",
                 "totalSpringHoldMin": "保持累計分",
             },
             title="色が明るいほど制約付き総合点が高い候補です。形で判定を分け、上位10件を黒枠で強調します。",
@@ -1503,7 +1518,7 @@ with diff_tab:
             format_func=lambda i: f"#{int(diff_options.iloc[i]['順位'])} {diff_options.iloc[i]['判定']} / {diff_options.iloc[i]['scenario_label']}",
         )
         scenario_id = diff_options.iloc[diff_idx]["scenario_id"]
-        slope_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "avgWaitMin", "top5WaitMin", "headwayRmseStops", "maxHeadwayStops", "totalSpringHoldMin", "skippedPassengers", "bunchScore"]
+        slope_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "avgWaitMin", "top5WaitMin", "headwayRmseStops", "maxHeadwayStops", "deniedPassengers", "deniedMaxExtraMin", "totalSpringHoldMin", "controlSkippedPassengers", "bunchScore"]
         rows = aggregate[aggregate["scenario_id"].eq(scenario_id) & aggregate["metric"].isin(slope_metrics)].copy()
         rows["metric_label"] = rows["metric"].map(metric_label)
         rows["mode_label"] = rows["mode"].map(mode_label)
@@ -1551,11 +1566,12 @@ with risk_tab:
     if candidate_table.empty:
         st.info("候補がありません。")
     else:
-        risk_cols = st.columns(3)
+        risk_cols = st.columns(4)
         for col, metric, title in [
             (risk_cols[0], "totalSpringHoldMin", "保持累計分"),
             (risk_cols[1], "maxSpringHoldSec", "最大保持秒"),
-            (risk_cols[2], "skippedPassengers", "スキップ人数"),
+            (risk_cols[2], "deniedPassengers", "乗車不可影響人数"),
+            (risk_cols[3], "controlSkippedPassengers", "制御スキップ人数"),
         ]:
             fig = px.histogram(
                 candidate_table,
@@ -1568,7 +1584,7 @@ with risk_tab:
             fig.update_layout(height=300, showlegend=False)
             col.plotly_chart(fig, use_container_width=True)
 
-        strip_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "totalSpringHoldMin", "maxSpringHoldSec", "skippedPassengers"]
+        strip_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "deniedPassengers", "deniedMaxExtraMin", "totalSpringHoldMin", "maxSpringHoldSec", "controlSkippedPassengers"]
         strips = candidate_table.melt(
             id_vars=["scenario_id", "判定", "順位", "scenario_label"],
             value_vars=[m for m in strip_metrics if m in candidate_table.columns],

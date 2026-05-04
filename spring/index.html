@@ -1083,10 +1083,12 @@
       "bunchScore", "bunchDurationMin", "headwayErrorSum", "headwayRmseStops",
       "minHeadwayStops", "maxHeadwayStops", "avgDelayMin", "maxDelayMin",
       "totalBlockedDelayMin", "blockEvents", "maxBlockedDelayMin",
-      "skippedPassengers", "skipAvgExtraMin", "skipMaxExtraMin",
-      "multiSkippedPassengers", "deniedAfterSkip", "fullPassEvents",
+      "deniedPassengers", "deniedAvgExtraMin", "deniedMaxExtraMin",
+      "controlSkippedPassengers", "controlSkipAvgExtraMin", "controlSkipMaxExtraMin",
+      "multiControlSkippedPassengers", "fullDeniedAfterControlSkipPassengers", "fullPassEvents",
+      "fullDeniedPassengers",
       "springHoldEvents", "totalSpringHoldMin", "avgSpringHoldSec", "maxSpringHoldSec",
-      "springSkipAssistEvents", "springInterventionCount", "springPositiveSignalAvg",
+      "springControlSkipAssistEvents", "springInterventionCount", "springPositiveSignalAvg",
       "springNegativeSignalAvg", "springSignalAbsAvg"
     ];
 
@@ -1403,6 +1405,10 @@
       c.springDamping = clamp(numberWithDefault(c.springDamping, 0.06), 0, 0.5);
       c.springMaxHoldSec = clamp(numberWithDefault(c.springMaxHoldSec, 45), 0, 180);
       c.springMinHoldSec = clamp(numberWithDefault(c.springMinHoldSec, 8), 0, 60);
+      c.forbidHoldingWhenFull = String(raw.forbidHoldingWhenFull ?? true).toLowerCase() !== "false"
+        && String(raw.forbidHoldingWhenFull ?? true).toLowerCase() !== "0"
+        && String(raw.forbidHoldingWhenFull ?? true).toLowerCase() !== "no"
+        && String(raw.forbidHoldingWhenFull ?? true).toLowerCase() !== "off";
       c.hotspotStops = (c.hotspotStops || []).filter((n) => n >= 0 && n < c.stopCount);
       c.protectHotspotStops = raw.protectHotspotStops === true || raw.protectHotspotStops === "true";
       c.forbiddenStops = c.protectHotspotStops ? [...c.hotspotStops] : [];
@@ -1559,7 +1565,7 @@
         this.serviceStopCount = 0;
         this.totalSpringHoldSec = 0;
         this.maxSpringHoldSec = 0;
-        this.springSkipAssistEvents = 0;
+        this.springControlSkipAssistEvents = 0;
         this.totalBlockedDelaySec = 0;
         this.blockEvents = 0;
         this.maxBlockedSec = 0;
@@ -1617,7 +1623,8 @@
             springHoldEndTime: null,
             lastSpringSignal: 0,
             lastAction: "通常",
-            justSkippedStop: null
+            justSkippedStop: null,
+            serviceBoardingOpen: true
           });
           if (i === 0 && this.config.initialDelaySec > 0) {
             this.occupyStop(stop, i + 1, this.config.initialDelaySec);
@@ -1653,6 +1660,7 @@
         bus.serviceStopId = null;
         bus.springHoldStartTime = null;
         bus.springHoldEndTime = null;
+        bus.serviceBoardingOpen = true;
         bus.lastAction = "走行";
       }
 
@@ -1668,9 +1676,11 @@
             alightTime: null,
             skipCount: 0,
             firstSkipTime: null,
+            firstDeniedTime: null,
             skippedAt: [],
             deniedFullCount: 0,
-            deniedAfterSkip: 0
+            fullDeniedAfterControlSkipCount: 0,
+            lastFullDeniedBusId: null
           };
           this.allPassengers.set(p.id, p);
           this.waiting[e.origin].push(p);
@@ -1686,6 +1696,7 @@
           if (bus.status === "dwelling") {
             bus.dwellRemaining -= actualDt;
             bus.delaySec += actualDt;
+            this.boardDuringDwell(bus, nextTime);
             if (bus.dwellRemaining <= 0) {
               this.releaseStop(bus.serviceStopId, bus.id);
               this.startSegment(bus, bus.fromStop, true);
@@ -1801,6 +1812,7 @@
           for (const p of this.waiting[stop]) {
             p.skipCount++;
             if (p.firstSkipTime == null) p.firstSkipTime = this.time;
+            if (p.firstDeniedTime == null) p.firstDeniedTime = this.time;
             p.skippedAt.push({ time: this.time, stop, busId: bus.id });
           }
           bus.totalSkipped += skippedNow;
@@ -1808,7 +1820,7 @@
           bus.justSkippedStop = stop;
           if (decision.assist) {
             bus.springConsecutiveSkips++;
-            this.springSkipAssistEvents++;
+            this.springControlSkipAssistEvents++;
           }
           this.skipLog.push({ time: this.time, stop, busId: bus.id, passengers: skippedNow, reason: decision.reason, assist: !!decision.assist });
         } else {
@@ -1825,8 +1837,7 @@
           if (queue.length > 0) {
             deniedByFull = queue.length;
             for (const p of queue) {
-              p.deniedFullCount++;
-              if (p.skipCount > 0) p.deniedAfterSkip++;
+              this.recordFullDenial(p, bus.id, this.time);
             }
             this.fullPassLog.push({ time: this.time, stop, busId: bus.id, passengers: deniedByFull });
           }
@@ -1834,8 +1845,12 @@
         }
 
         const baseDwell = this.calculateDwellTime(bus, boarded, alighting.length, decision.skip);
-        const holdSec = Math.max(0, decision.holdSec || 0);
+        let holdSec = Math.max(0, decision.holdSec || 0);
+        if (holdSec > 0 && this.config.forbidHoldingWhenFull && bus.onboard.length >= this.config.capacity) {
+          holdSec = 0;
+        }
         const dwell = baseDwell + holdSec;
+        bus.serviceBoardingOpen = !decision.skip;
         if (holdSec > 0) {
           bus.lastAction = `スプリング保持 ${fmt(holdSec,0)}秒`;
           bus.springHoldStartTime = this.time + baseDwell;
@@ -1859,6 +1874,74 @@
         } else {
           this.startSegment(bus, stop, true);
         }
+      }
+
+      boardDuringDwell(bus, currentTime) {
+        const stop = bus.serviceStopId;
+        if (stop == null || !bus.serviceBoardingOpen) return;
+        const queue = this.waiting[stop];
+        if (!queue.length) return;
+        let boarded = 0;
+        while (queue.length && bus.onboard.length < this.config.capacity && queue[0].arrivalTime <= currentTime + 1e-9) {
+          const p = queue.shift();
+          p.boardTime = Math.max(p.arrivalTime, this.time);
+          bus.onboard.push(p);
+          boarded++;
+        }
+        if (boarded) {
+          bus.lastAction = `停車中乗車 ${boarded}`;
+        }
+        if (queue.length && bus.onboard.length >= this.config.capacity) {
+          let deniedNow = 0;
+          for (const p of queue) {
+            if (p.arrivalTime <= currentTime + 1e-9 && p.lastFullDeniedBusId !== bus.id) {
+              this.recordFullDenial(p, bus.id, p.arrivalTime);
+              deniedNow++;
+            }
+          }
+          if (deniedNow) {
+            this.fullPassLog.push({ time: currentTime, stop, busId: bus.id, passengers: deniedNow });
+          }
+        }
+        if (this.config.forbidHoldingWhenFull && bus.onboard.length >= this.config.capacity) {
+          this.cancelSpringHoldForFullBus(bus, currentTime);
+        }
+      }
+
+      recordFullDenial(passenger, busId, deniedTime) {
+        passenger.deniedFullCount++;
+        passenger.lastFullDeniedBusId = busId;
+        if (passenger.firstDeniedTime == null) passenger.firstDeniedTime = deniedTime;
+        if (passenger.skipCount > 0) passenger.fullDeniedAfterControlSkipCount++;
+      }
+
+      cancelSpringHoldForFullBus(bus, currentTime) {
+        if (bus.springHoldStartTime == null || bus.springHoldEndTime == null) return;
+        const oldEnd = bus.springHoldEndTime;
+        const newEnd = Math.max(bus.springHoldStartTime, Math.min(currentTime, oldEnd));
+        if (newEnd >= oldEnd - 1e-9) return;
+        const cancelled = oldEnd - newEnd;
+        bus.springHoldEndTime = newEnd;
+        bus.dwellRemaining = Math.min(bus.dwellRemaining, Math.max(0, newEnd - currentTime));
+        this.totalSpringHoldSec = Math.max(0, this.totalSpringHoldSec - cancelled);
+        bus.totalDwell = Math.max(0, bus.totalDwell - cancelled);
+        this.totalDwell = Math.max(0, this.totalDwell - cancelled);
+        if (bus.serviceStopId != null) {
+          const stop = this.stops[bus.serviceStopId];
+          if (stop.occupiedByBusId === bus.id) {
+            stop.serviceEndTime = Math.min(stop.serviceEndTime, newEnd);
+          }
+          stop.totalOccupiedSec = Math.max(0, stop.totalOccupiedSec - cancelled);
+        }
+        for (let i = this.springHoldLog.length - 1; i >= 0; i--) {
+          const row = this.springHoldLog[i];
+          if (row.busId === bus.id && row.stop === bus.serviceStopId) {
+            row.holdSec = Math.max(0, newEnd - bus.springHoldStartTime);
+            row.cancelledByFull = true;
+            break;
+          }
+        }
+        this.maxSpringHoldSec = this.springHoldLog.reduce((max, row) => Math.max(max, Number(row.holdSec) || 0), 0);
       }
 
       calculateDwellTime(bus, boarded, alighted, skip) {
@@ -1973,6 +2056,9 @@
         const deadband = this.config.springDeadbandStops;
         const holdCandidate = ctx.springSignal < -deadband && ctx.hFront < H && ctx.hBack > H;
         if (holdCandidate) {
+          if (this.config.forbidHoldingWhenFull && bus.onboard.length >= this.config.capacity) {
+            return { skip: false, holdSec: 0, reason: "full bus holding forbidden", springSignal: ctx.springSignal, hFront: ctx.hFront, hBack: ctx.hBack };
+          }
           const holdSec = clamp(
             (-ctx.springSignal - deadband) * this.config.springGainSecPerStop - this.config.springDamping * bus.delaySec,
             0,
@@ -2204,8 +2290,11 @@
           minHeadwayStops: metrics.minHeadwayStops,
           maxHeadwayStops: metrics.maxHeadwayStops,
           headwayRmseStops: metrics.headwayRmseStops,
-          skipAvgExtraMin: metrics.skipAvgExtraMin,
-          skipMaxExtraMin: metrics.skipMaxExtraMin,
+          deniedPassengers: metrics.deniedPassengers,
+          deniedAvgExtraMin: metrics.deniedAvgExtraMin,
+          deniedMaxExtraMin: metrics.deniedMaxExtraMin,
+          controlSkipAvgExtraMin: metrics.controlSkipAvgExtraMin,
+          controlSkipMaxExtraMin: metrics.controlSkipMaxExtraMin,
           totalSpringHoldMin: metrics.totalSpringHoldMin,
           springInterventionCount: metrics.springInterventionCount,
           totalBlockedDelayMin: metrics.totalBlockedDelayMin,
@@ -2226,9 +2315,12 @@
         const totals = this.completed.map((p) => (p.alightTime - p.arrivalTime) / 60).filter(Number.isFinite);
         const adjusted = this.adjustedTotalTimesMin();
         const adjustedTotals = adjusted.values;
-        const skipped = [...this.allPassengers.values()].filter((p) => p.skipCount > 0);
-        const skippedBoarded = skipped.filter((p) => p.boardTime != null && p.firstSkipTime != null);
-        const skipExtra = skippedBoarded.map((p) => (p.boardTime - p.firstSkipTime) / 60);
+        const controlSkipped = [...this.allPassengers.values()].filter((p) => p.skipCount > 0);
+        const controlSkippedBoarded = controlSkipped.filter((p) => p.boardTime != null && p.firstSkipTime != null);
+        const controlSkipExtra = controlSkippedBoarded.map((p) => (p.boardTime - p.firstSkipTime) / 60);
+        const denied = [...this.allPassengers.values()].filter((p) => p.firstDeniedTime != null);
+        const deniedBoarded = denied.filter((p) => p.boardTime != null);
+        const deniedExtra = deniedBoarded.map((p) => (p.boardTime - p.firstDeniedTime) / 60);
         const headways = this.headways();
         const ideal = this.config.stopCount / this.config.busCount;
         const minHw = Math.min(...headways);
@@ -2248,7 +2340,7 @@
         const onboardNow = sum(loadByBus);
         const delayByBus = this.buses.map((b) => b.delaySec / 60);
         const uniqueDenied = [...this.allPassengers.values()].filter((p) => p.deniedFullCount > 0).length;
-        const deniedAfterSkip = [...this.allPassengers.values()].filter((p) => p.deniedAfterSkip > 0).length;
+        const fullDeniedAfterControlSkipPassengers = [...this.allPassengers.values()].filter((p) => p.fullDeniedAfterControlSkipCount > 0).length;
         const stopBlockedDelayMins = this.stops.map((s) => s.totalBlockedDelaySec / 60);
         const stopOccupiedMins = this.stops.map((s) => s.totalOccupiedSec / 60);
         const stopOccupancyRates = this.stops.map((s) => this.time > 0 ? s.totalOccupiedSec / this.time : 0);
@@ -2282,14 +2374,17 @@
           expectedStopToStopSec: adjusted.expectedStopSec,
           averageDwellSec: adjusted.averageDwellSec,
           serviceStopCount: this.serviceStopCount,
-          skippedPassengers: skipped.length,
-          skipEvents: this.skipLog.length,
-          skipAvgExtraMin: mean(skipExtra),
-          skipMaxExtraMin: skipExtra.length ? Math.max(...skipExtra) : 0,
-          multiSkippedPassengers: skipped.filter((p) => p.skipCount >= 2).length,
-          deniedAfterSkip,
+          deniedPassengers: denied.length,
+          deniedAvgExtraMin: mean(deniedExtra),
+          deniedMaxExtraMin: deniedExtra.length ? Math.max(...deniedExtra) : 0,
+          controlSkippedPassengers: controlSkipped.length,
+          controlSkipEvents: this.skipLog.length,
+          controlSkipAvgExtraMin: mean(controlSkipExtra),
+          controlSkipMaxExtraMin: controlSkipExtra.length ? Math.max(...controlSkipExtra) : 0,
+          multiControlSkippedPassengers: controlSkipped.filter((p) => p.skipCount >= 2).length,
+          fullDeniedAfterControlSkipPassengers,
           fullPassEvents: this.fullPassLog.length,
-          uniqueDeniedFull: uniqueDenied,
+          fullDeniedPassengers: uniqueDenied,
           headwayStdStops: std(headways),
           idealHeadwayStops: ideal,
           minHeadwayStops: minHw,
@@ -2305,13 +2400,13 @@
           maxDelayMin: delayByBus.length ? Math.max(...delayByBus) : 0,
           loadStd: std(loadByBus),
           totalDwellMin: this.totalDwell / 60,
-          totalSkips: sum(this.buses.map((b) => b.totalSkipped)),
+          totalControlSkipPassengerEvents: sum(this.buses.map((b) => b.totalSkipped)),
           springHoldEvents,
           totalSpringHoldMin: this.totalSpringHoldSec / 60,
           avgSpringHoldSec: springHoldEvents ? this.totalSpringHoldSec / springHoldEvents : 0,
           maxSpringHoldSec: this.maxSpringHoldSec,
-          springSkipAssistEvents: this.springSkipAssistEvents,
-          springInterventionCount: springHoldEvents + this.springSkipAssistEvents,
+          springControlSkipAssistEvents: this.springControlSkipAssistEvents,
+          springInterventionCount: springHoldEvents + this.springControlSkipAssistEvents,
           springPositiveSignalAvg: positiveSignals.length ? mean(positiveSignals) : 0,
           springNegativeSignalAvg: negativeSignals.length ? mean(negativeSignals) : 0,
           springSignalAbsAvg: signals.length ? mean(signals.map((v) => Math.abs(v))) : 0,
@@ -2632,7 +2727,8 @@
         const rmseSpring = improve(g, "headwayRmseStops");
         const blockedSkip = improve(s, "totalBlockedDelayMin");
         const blockedSpring = improve(g, "totalBlockedDelayMin");
-        const springCaution = g.skipMaxExtraMin > 6 || g.multiSkippedPassengers > 0 || g.deniedAfterSkip > 0 || g.totalSpringHoldMin > 18;
+        const springCaution = g.deniedMaxExtraMin > 6 || g.multiControlSkippedPassengers > 0 || g.fullDeniedAfterControlSkipPassengers > 0 || g.totalSpringHoldMin > 18;
+        const deniedClass = Math.max(s.deniedMaxExtraMin, g.deniedMaxExtraMin) > 6 || g.deniedPassengers > s.deniedPassengers ? "warn" : "good";
         $("summary").innerHTML = [
           this.metric("待ち時間改善", `S ${fmt(waitSkip,0)}% / Sp ${fmt(waitSpring,0)}%`, `なし ${fmt(p.avgWaitMin)} / スキップ ${fmt(s.avgWaitMin)} / スプリング ${fmt(g.avgWaitMin)} 分`, Math.max(waitSkip, waitSpring) > 5 ? "good" : Math.max(waitSkip, waitSpring) < -3 ? "bad" : "warn"),
           this.metric("補正総所要時間改善", `S ${fmt(totalSkip,0)}% / Sp ${fmt(totalSpring,0)}%`, `なし ${fmt(p.adjustedAvgTotalMin)} / スキップ ${fmt(s.adjustedAvgTotalMin)} / スプリング ${fmt(g.adjustedAvgTotalMin)} 分`, Math.max(totalSkip, totalSpring) > 5 ? "good" : Math.max(totalSkip, totalSpring) < -3 ? "bad" : "warn"),
@@ -2640,7 +2736,8 @@
           this.metric("RMSE改善", `S ${fmt(rmseSkip,0)}% / Sp ${fmt(rmseSpring,0)}%`, `車間RMSE ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)}`, Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn"),
           this.metric("最大車間", `${fmt(g.maxHeadwayStops)}停`, `なし ${fmt(p.maxHeadwayStops)} / スキップ ${fmt(s.maxHeadwayStops)}停`, g.maxHeadwayStops <= s.maxHeadwayStops ? "good" : "warn"),
           this.metric("前車待ち削減", `S ${fmt(blockedSkip,0)}% / Sp ${fmt(blockedSpring,0)}%`, `総 ${fmt(p.totalBlockedDelayMin)} → ${fmt(s.totalBlockedDelayMin)} / ${fmt(g.totalBlockedDelayMin)} 分`, Math.max(blockedSkip, blockedSpring) > 8 ? "good" : "warn"),
-          this.metric("スプリング介入", `${fmt(g.springInterventionCount,0)}回`, `保持 ${fmt(g.totalSpringHoldMin)}分 / 補助スキップ ${fmt(g.springSkipAssistEvents,0)}回`, springCaution ? "warn" : "good")
+          this.metric("乗車不可", `S ${fmt(s.deniedPassengers,0)} / Sp ${fmt(g.deniedPassengers,0)}人`, `最大追加待ち ${fmt(s.deniedMaxExtraMin)} / ${fmt(g.deniedMaxExtraMin)} 分`, deniedClass),
+          this.metric("スプリング介入", `${fmt(g.springInterventionCount,0)}回`, `保持 ${fmt(g.totalSpringHoldMin)}分 / 補助スキップ ${fmt(g.springControlSkipAssistEvents,0)}回`, springCaution ? "warn" : "good")
         ].join("");
       }
 
@@ -2658,7 +2755,8 @@
           ["最大車間", `${fmt(m.maxHeadwayStops)}停`],
           ["RMSE", `${fmt(m.headwayRmseStops)}停`],
           ["前車待ち", `${fmt(m.totalBlockedDelayMin)}分`],
-          ["スキップ", `${m.skipEvents}回`],
+          ["乗車不可", `${fmt(m.deniedPassengers,0)}人`],
+          ["制御スキップ", `${m.controlSkipEvents}回`],
           ["保持", `${fmt(m.totalSpringHoldMin)}分`]
         ].map(([k, v]) => `<div class="mini"><b>${v}</b><span>${k}</span></div>`).join("");
       }
@@ -2798,10 +2896,12 @@
         this.drawLineChart($("maxHeadwayChart"), modeSeries("maxHeadwayStops"), null, durationMin);
         this.drawLineChart($("rmseChart"), modeSeries("headwayRmseStops"), null, durationMin);
         this.drawLineChart($("harmChart"), [
-          { name: "スキップ平均追加", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.skipAvgExtraMin]) },
-          { name: "スプリング平均追加", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.skipAvgExtraMin]) },
-          { name: "スキップ最大追加", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.skipMaxExtraMin]), dash: true },
-          { name: "スプリング最大追加", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.skipMaxExtraMin]), dash: true }
+          { name: "なし乗車不可平均追加", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.deniedAvgExtraMin]) },
+          { name: "スキップ乗車不可平均追加", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.deniedAvgExtraMin]) },
+          { name: "スプリング乗車不可平均追加", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.deniedAvgExtraMin]) },
+          { name: "なし乗車不可最大追加", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.deniedMaxExtraMin]), dash: true },
+          { name: "スキップ乗車不可最大追加", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.deniedMaxExtraMin]), dash: true },
+          { name: "スプリング乗車不可最大追加", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.deniedMaxExtraMin]), dash: true }
         ], null, durationMin);
         this.drawLineChart($("blockedChart"), modeSeries("totalBlockedDelayMin"), null, durationMin);
         this.drawLineChart($("bunchBlockedChart"), modeSeries("blockedDuringBunchMin"), null, durationMin);
@@ -2894,10 +2994,10 @@
         lines.push([Math.max(totalSkip, totalSpring) > 5 ? "good" : "warn", `補正総所要時間は、完了済み・乗車中・待機中の全発生乗客を含めます。スキップ制御で${fmt(totalSkip,0)}%、スプリング法で${fmt(totalSpring,0)}%の変化です。`]);
         lines.push([Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn", `等間隔性を表す headway RMSE は ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)} 停です。最小車間だけでなく最大車間も合わせて見てください。`]);
         lines.push([g.maxHeadwayStops <= s.maxHeadwayStops ? "good" : "warn", `最大車間は制御なし ${fmt(p.maxHeadwayStops)}、スキップ ${fmt(s.maxHeadwayStops)}、スプリング ${fmt(g.maxHeadwayStops)} 停です。空白区間の悪化抑制がスプリング法の主な確認点です。`]);
-        const skipHarm = s.skippedPassengers + g.skippedPassengers;
-        const harmClass = Math.max(s.skipMaxExtraMin, g.skipMaxExtraMin) > 6 || s.deniedAfterSkip + g.deniedAfterSkip > 0 ? "bad" : skipHarm > 0 ? "warn" : "good";
-        lines.push([harmClass, `スキップされた乗客はスキップ制御 ${fmt(s.skippedPassengers,0)} 人、スプリング法 ${fmt(g.skippedPassengers,0)} 人です。最大追加待ちは ${fmt(s.skipMaxExtraMin)} / ${fmt(g.skipMaxExtraMin)} 分です。`]);
-        lines.push([g.springInterventionCount > 0 ? "warn" : "good", `スプリング法の介入は保持 ${fmt(g.springHoldEvents,0)} 回、補助スキップ ${fmt(g.springSkipAssistEvents,0)} 回、保持累積 ${fmt(g.totalSpringHoldMin)} 分です。`]);
+        const deniedHarm = s.deniedPassengers + g.deniedPassengers;
+        const harmClass = Math.max(s.deniedMaxExtraMin, g.deniedMaxExtraMin) > 6 || s.fullDeniedAfterControlSkipPassengers + g.fullDeniedAfterControlSkipPassengers > 0 ? "bad" : deniedHarm > 0 ? "warn" : "good";
+        lines.push([harmClass, `乗車不可影響人数はスキップ制御 ${fmt(s.deniedPassengers,0)} 人、スプリング法 ${fmt(g.deniedPassengers,0)} 人です。最大追加待ちは ${fmt(s.deniedMaxExtraMin)} / ${fmt(g.deniedMaxExtraMin)} 分です。`]);
+        lines.push([g.springInterventionCount > 0 ? "warn" : "good", `スプリング法の介入は保持 ${fmt(g.springHoldEvents,0)} 回、補助スキップ ${fmt(g.springControlSkipAssistEvents,0)} 回、保持累積 ${fmt(g.totalSpringHoldMin)} 分です。`]);
         $("comments").innerHTML = lines.map(([cls, text]) => `<div class="line ${cls}">${text}</div>`).join("");
       }
 
@@ -2934,18 +3034,22 @@
           ["最大前車待ち 分", "maxBlockedDelayMin"],
           ["混雑偏り SD", "loadStd"],
           ["総停車時間 分", "totalDwellMin"],
-          ["スキップ回数", "skipEvents"],
-          ["スキップ人数", "skippedPassengers"],
-          ["追加待ち平均 分", "skipAvgExtraMin"],
-          ["追加待ち最大 分", "skipMaxExtraMin"],
-          ["複数回スキップ 人", "multiSkippedPassengers"],
+          ["乗車不可影響人数", "deniedPassengers"],
+          ["乗車不可平均追加待ち 分", "deniedAvgExtraMin"],
+          ["乗車不可最大追加待ち 分", "deniedMaxExtraMin"],
+          ["制御スキップ回数", "controlSkipEvents"],
+          ["制御スキップ人数", "controlSkippedPassengers"],
+          ["制御スキップ追加待ち平均 分", "controlSkipAvgExtraMin"],
+          ["制御スキップ追加待ち最大 分", "controlSkipMaxExtraMin"],
+          ["複数回制御スキップ 人", "multiControlSkippedPassengers"],
           ["満員通過回数", "fullPassEvents"],
-          ["後続満員影響 人", "deniedAfterSkip"],
+          ["満員影響 人", "fullDeniedPassengers"],
+          ["制御スキップ後満員影響 人", "fullDeniedAfterControlSkipPassengers"],
           ["スプリング保持回数", "springHoldEvents"],
           ["スプリング保持累積 分", "totalSpringHoldMin"],
           ["スプリング保持平均 秒", "avgSpringHoldSec"],
           ["スプリング保持最大 秒", "maxSpringHoldSec"],
-          ["補助スキップ回数", "springSkipAssistEvents"],
+          ["補助スキップ回数", "springControlSkipAssistEvents"],
           ["スプリング介入回数", "springInterventionCount"],
           ["正の信号平均", "springPositiveSignalAvg"],
           ["負の信号平均", "springNegativeSignalAvg"],
@@ -3032,7 +3136,7 @@
         const rows = distances.map((d) => {
           const r = this.runFast({ ...base, distanceThresholdStops: d });
           const improve = r.plain.avgWaitMin > 0 ? (r.plain.avgWaitMin - r.skip.avgWaitMin) / r.plain.avgWaitMin * 100 : 0;
-          return `${d}停: スキップ待ち改善${fmt(improve,0)}%, 団子度${fmt(r.skip.bunchScore,0)}, RMSE${fmt(r.skip.headwayRmseStops)}停, 最大追加${fmt(r.skip.skipMaxExtraMin)}分`;
+          return `${d}停: スキップ待ち改善${fmt(improve,0)}%, 団子度${fmt(r.skip.bunchScore,0)}, RMSE${fmt(r.skip.headwayRmseStops)}停, 最大追加${fmt(r.skip.controlSkipMaxExtraMin)}分`;
         });
         $("experimentOutput").innerHTML = `後続車間しきい値スイープ<br>${rows.join("<br>")}`;
       }

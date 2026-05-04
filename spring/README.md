@@ -85,13 +85,16 @@ h_back < idealHeadway
 
 - `headwayErrorSum`
 - `headwayRmseStops`
+- `deniedPassengers`
+- `deniedAvgExtraMin`
+- `deniedMaxExtraMin`
 - `avgTotalMin`
 - `p95TotalMin`
 - `springHoldEvents`
 - `totalSpringHoldMin`
 - `avgSpringHoldSec`
 - `maxSpringHoldSec`
-- `springSkipAssistEvents`
+- `springControlSkipAssistEvents`
 - `springInterventionCount`
 - `springPositiveSignalAvg`
 - `springNegativeSignalAvg`

@@ -57,7 +57,21 @@ class ModelPortTests(unittest.TestCase):
         config = normalize_config({**PRESETS["urban"], "seed": 238592, "durationMin": 12})
         py = run_three_modes(config)
         js = node_reference(238592, 12)["metrics"]
-        keys = ["completed", "avgWaitMin", "avgTotalMin", "bunchScore", "headwayRmseStops", "totalBlockedDelayMin"]
+        keys = [
+            "completed",
+            "avgWaitMin",
+            "avgTotalMin",
+            "bunchScore",
+            "headwayRmseStops",
+            "totalBlockedDelayMin",
+            "deniedPassengers",
+            "deniedAvgExtraMin",
+            "deniedMaxExtraMin",
+            "controlSkippedPassengers",
+            "controlSkipAvgExtraMin",
+            "controlSkipMaxExtraMin",
+            "fullDeniedPassengers",
+        ]
         for mode in ("plain", "skip", "spring"):
             for key in keys:
                 self.assertTrue(math.isfinite(py[mode]["metrics"][key]))
@@ -66,14 +80,38 @@ class ModelPortTests(unittest.TestCase):
     def test_top5_metric_names_and_adjusted_metrics_are_emitted(self) -> None:
         config = normalize_config({**PRESETS["urban"], "seed": 238592, "durationMin": 8})
         py = run_three_modes(config, include_history=True)
-        required = {"top5WaitMin", "top5TotalMin", "recentTop5WaitMin", "adjustedAvgTotalMin", "adjustedTop5TotalMin"}
+        required = {
+            "top5WaitMin",
+            "top5TotalMin",
+            "recentTop5WaitMin",
+            "adjustedAvgTotalMin",
+            "adjustedTop5TotalMin",
+            "deniedPassengers",
+            "deniedAvgExtraMin",
+            "deniedMaxExtraMin",
+            "controlSkippedPassengers",
+            "controlSkipAvgExtraMin",
+            "controlSkipMaxExtraMin",
+        }
+        old_metric_names = {
+            "skippedPassengers",
+            "skipAvgExtraMin",
+            "skipMaxExtraMin",
+            "multiSkippedPassengers",
+            "deniedAfterSkip",
+            "uniqueDeniedFull",
+            "totalSkips",
+            "springSkipAssistEvents",
+        }
         legacy_prefix = "p" + "95"
         for mode in ("plain", "skip", "spring"):
             metrics = py[mode]["metrics"]
             self.assertTrue(required <= set(metrics))
             self.assertFalse(any(legacy_prefix in key.lower() for key in metrics))
+            self.assertFalse(old_metric_names & set(metrics))
             for row in py[mode]["history"]:
                 self.assertFalse(any(legacy_prefix in key.lower() for key in row))
+                self.assertFalse(old_metric_names & set(row))
 
     def test_adjusted_total_penalizes_incomplete_passengers(self) -> None:
         config = normalize_config({**PRESETS["urban"], "seed": 12345, "durationMin": 3, "demandMultiplier": 2.2, "initialDelaySec": 180})
@@ -102,6 +140,128 @@ class ModelPortTests(unittest.TestCase):
         metrics = sim.compute_metrics()
         self.assertAlmostEqual(metrics["adjustedAvgTotalMin"], metrics["avgTotalMin"], places=7)
         self.assertAlmostEqual(metrics["adjustedTop5TotalMin"], metrics["top5TotalMin"], places=7)
+
+    def test_denied_metrics_combine_control_skip_and_full_bus(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 1, "durationMin": 1})
+        sim = Simulation(config, "plain", [], include_history=False)
+        sim.time = 600.0
+
+        control_only = Passenger(1, 0, 2, arrivalTime=0.0, boardTime=220.0, skipCount=1, firstSkipTime=100.0, firstDeniedTime=100.0)
+        full_only = Passenger(2, 0, 2, arrivalTime=0.0, boardTime=270.0, firstDeniedTime=150.0, deniedFullCount=2)
+        repeated_unboarded = Passenger(
+            3,
+            0,
+            2,
+            arrivalTime=0.0,
+            skipCount=2,
+            firstSkipTime=180.0,
+            firstDeniedTime=180.0,
+            deniedFullCount=1,
+            fullDeniedAfterControlSkipCount=1,
+        )
+        normal = Passenger(4, 0, 2, arrivalTime=0.0, boardTime=200.0)
+        for passenger in (control_only, full_only, repeated_unboarded, normal):
+            sim.allPassengers[passenger.id] = passenger
+
+        metrics = sim.compute_metrics()
+        self.assertEqual(metrics["deniedPassengers"], 3)
+        self.assertAlmostEqual(metrics["deniedAvgExtraMin"], 2.0, places=7)
+        self.assertAlmostEqual(metrics["deniedMaxExtraMin"], 2.0, places=7)
+        self.assertEqual(metrics["controlSkippedPassengers"], 2)
+        self.assertAlmostEqual(metrics["controlSkipAvgExtraMin"], 2.0, places=7)
+        self.assertAlmostEqual(metrics["controlSkipMaxExtraMin"], 2.0, places=7)
+        self.assertEqual(metrics["multiControlSkippedPassengers"], 1)
+        self.assertEqual(metrics["fullDeniedPassengers"], 2)
+        self.assertEqual(metrics["fullDeniedAfterControlSkipPassengers"], 1)
+
+    def test_passengers_arriving_while_bus_is_stopped_board_without_extending_dwell(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 1, "durationMin": 1, "capacity": 2})
+        sim = Simulation(config, "plain", [], include_history=False)
+        bus = sim.buses[0]
+        sim.time = 10.0
+        bus.status = "dwelling"
+        bus.serviceStopId = 0
+        bus.fromStop = 0
+        bus.dwellRemaining = 30.0
+        bus.onboard = []
+        bus.serviceBoardingOpen = True
+        passenger = Passenger(99, 0, 2, arrivalTime=12.0)
+        sim.waiting[0].append(passenger)
+
+        sim.board_during_dwell(bus, 12.0)
+
+        self.assertEqual(sim.waiting[0], [])
+        self.assertEqual(bus.onboard, [passenger])
+        self.assertEqual(passenger.boardTime, 12.0)
+        self.assertEqual(bus.dwellRemaining, 30.0)
+
+    def test_full_bus_suppresses_new_holding_by_default(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 1, "durationMin": 1, "capacity": 1})
+        sim = Simulation(config, "spring", [], include_history=False)
+        bus = sim.buses[0]
+        bus.routePos = 0
+        bus.pos = 0
+        sim.waiting[0].append(Passenger(99, 0, 2, arrivalTime=0.0))
+        sim.control_decision = lambda bus, stop, alighting_count=0: {"skip": False, "holdSec": 60.0}  # type: ignore[method-assign]
+
+        sim.begin_service(bus, 0)
+
+        self.assertEqual(len(bus.onboard), 1)
+        self.assertEqual(sim.totalSpringHoldSec, 0.0)
+        self.assertEqual(sim.springHoldLog, [])
+
+    def test_full_bus_holding_constraint_can_be_disabled(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 1, "durationMin": 1, "capacity": 1, "forbidHoldingWhenFull": False})
+        sim = Simulation(config, "spring", [], include_history=False)
+        bus = sim.buses[0]
+        bus.routePos = 0
+        bus.pos = 0
+        sim.waiting[0].append(Passenger(99, 0, 2, arrivalTime=0.0))
+        sim.control_decision = lambda bus, stop, alighting_count=0: {"skip": False, "holdSec": 60.0}  # type: ignore[method-assign]
+
+        sim.begin_service(bus, 0)
+
+        self.assertEqual(len(bus.onboard), 1)
+        self.assertEqual(sim.totalSpringHoldSec, 60.0)
+        self.assertEqual(len(sim.springHoldLog), 1)
+
+    def test_holding_is_cancelled_when_stop_arrivals_fill_bus(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 1, "durationMin": 1, "capacity": 2})
+        sim = Simulation(config, "spring", [], include_history=False)
+        bus = sim.buses[0]
+        sim.time = 100.0
+        bus.status = "dwelling"
+        bus.serviceStopId = 0
+        bus.fromStop = 0
+        bus.dwellRemaining = 50.0
+        bus.serviceBoardingOpen = True
+        bus.onboard = [Passenger(1, 9, 3, arrivalTime=0.0, boardTime=10.0)]
+        bus.springHoldStartTime = 90.0
+        bus.springHoldEndTime = 150.0
+        sim.totalSpringHoldSec = 60.0
+        sim.maxSpringHoldSec = 60.0
+        bus.totalDwell = 70.0
+        sim.totalDwell = 70.0
+        sim.springHoldLog.append({"time": 80.0, "stop": 0, "busId": bus.id, "holdSec": 60.0})
+        sim.stops[0].occupiedByBusId = bus.id
+        sim.stops[0].serviceEndTime = 150.0
+        sim.stops[0].totalOccupiedSec = 70.0
+        passenger = Passenger(99, 0, 2, arrivalTime=105.0)
+        sim.waiting[0].append(passenger)
+
+        sim.board_during_dwell(bus, 105.0)
+
+        self.assertEqual(passenger.boardTime, 105.0)
+        self.assertEqual(len(bus.onboard), 2)
+        self.assertEqual(bus.dwellRemaining, 0.0)
+        self.assertEqual(bus.springHoldEndTime, 105.0)
+        self.assertEqual(sim.totalSpringHoldSec, 15.0)
+        self.assertEqual(sim.maxSpringHoldSec, 15.0)
+        self.assertEqual(bus.totalDwell, 25.0)
+        self.assertEqual(sim.totalDwell, 25.0)
+        self.assertEqual(sim.springHoldLog[0]["holdSec"], 15.0)
+        self.assertTrue(sim.springHoldLog[0]["cancelledByFull"])
+        self.assertEqual(sim.stops[0].serviceEndTime, 105.0)
 
     def test_legacy_stop_fixed_parts_are_combined(self) -> None:
         config = normalize_config({"stopManeuverLossSec": 10, "doorTimeSec": 3})
@@ -136,6 +296,12 @@ class ModelPortTests(unittest.TestCase):
         self.assertEqual(config["springDamping"], 2)
         self.assertEqual(config["springMaxHoldSec"], 600)
         self.assertEqual(config["springMinHoldSec"], 300)
+
+    def test_full_bus_holding_constraint_parameter_is_boolean_like(self) -> None:
+        self.assertTrue(normalize_config({})["forbidHoldingWhenFull"])
+        self.assertFalse(normalize_config({"forbidHoldingWhenFull": False})["forbidHoldingWhenFull"])
+        self.assertFalse(normalize_config({"forbidHoldingWhenFull": "false"})["forbidHoldingWhenFull"])
+        self.assertFalse(normalize_config({"forbidHoldingWhenFull": 0})["forbidHoldingWhenFull"])
 
     def test_parameter_lower_bounds_prevent_invalid_runtime_values(self) -> None:
         config = normalize_config(

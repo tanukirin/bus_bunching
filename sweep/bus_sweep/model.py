@@ -79,9 +79,11 @@ class Passenger:
     alightTime: float | None = None
     skipCount: int = 0
     firstSkipTime: float | None = None
+    firstDeniedTime: float | None = None
     skippedAt: list[dict[str, Any]] = field(default_factory=list)
     deniedFullCount: int = 0
-    deniedAfterSkip: int = 0
+    fullDeniedAfterControlSkipCount: int = 0
+    lastFullDeniedBusId: int | None = None
 
 
 @dataclass(slots=True)
@@ -126,6 +128,7 @@ class Bus:
     lastSpringSignal: float = 0.0
     lastAction: str = "通常"
     justSkippedStop: int | None = None
+    serviceBoardingOpen: bool = True
 
 
 class EventGenerator:
@@ -211,7 +214,7 @@ class Simulation:
         self.serviceStopCount = 0
         self.totalSpringHoldSec = 0.0
         self.maxSpringHoldSec = 0.0
-        self.springSkipAssistEvents = 0
+        self.springControlSkipAssistEvents = 0
         self.totalBlockedDelaySec = 0.0
         self.blockEvents = 0
         self.maxBlockedSec = 0.0
@@ -273,6 +276,7 @@ class Simulation:
         bus.serviceStopId = None
         bus.springHoldStartTime = None
         bus.springHoldEndTime = None
+        bus.serviceBoardingOpen = True
         bus.lastAction = "走行"
 
     def add_arrivals(self, until_time: float) -> None:
@@ -292,6 +296,7 @@ class Simulation:
             if bus.status == "dwelling":
                 bus.dwellRemaining -= actual_dt
                 bus.delaySec += actual_dt
+                self.board_during_dwell(bus, next_time)
                 if bus.dwellRemaining <= 0:
                     self.release_stop(bus.serviceStopId, bus.id)
                     self.start_segment(bus, bus.fromStop, True)
@@ -391,13 +396,15 @@ class Simulation:
                 p.skipCount += 1
                 if p.firstSkipTime is None:
                     p.firstSkipTime = self.time
+                if p.firstDeniedTime is None:
+                    p.firstDeniedTime = self.time
                 p.skippedAt.append({"time": self.time, "stop": stop, "busId": bus.id})
             bus.totalSkipped += skipped_now
             bus.lastAction = "補助スキップ" if decision.get("assist") else "降車のみ"
             bus.justSkippedStop = stop
             if decision.get("assist"):
                 bus.springConsecutiveSkips += 1
-                self.springSkipAssistEvents += 1
+                self.springControlSkipAssistEvents += 1
             self.skipLog.append(
                 {"time": self.time, "stop": stop, "busId": bus.id, "passengers": skipped_now, "reason": decision.get("reason"), "assist": bool(decision.get("assist"))}
             )
@@ -413,15 +420,16 @@ class Simulation:
                 boarded += 1
             if queue:
                 for p in queue:
-                    p.deniedFullCount += 1
-                    if p.skipCount > 0:
-                        p.deniedAfterSkip += 1
+                    self.record_full_denial(p, bus.id, self.time)
                 self.fullPassLog.append({"time": self.time, "stop": stop, "busId": bus.id, "passengers": len(queue)})
             bus.lastAction = f"乗{boarded} 降{len(alighting)}" if boarded or alighting else "停車短"
 
         base_dwell = self.calculate_dwell_time(bus, boarded, len(alighting), bool(decision.get("skip")))
         hold_sec = max(0.0, float(decision.get("holdSec") or 0))
+        if hold_sec > 0 and self.config["forbidHoldingWhenFull"] and len(bus.onboard) >= self.config["capacity"]:
+            hold_sec = 0.0
         dwell = base_dwell + hold_sec
+        bus.serviceBoardingOpen = not bool(decision.get("skip"))
         if hold_sec > 0:
             bus.lastAction = f"スプリング保持 {hold_sec:.0f}秒"
             bus.springHoldStartTime = self.time + base_dwell
@@ -453,6 +461,65 @@ class Simulation:
             bus.serviceStopId = stop
         else:
             self.start_segment(bus, stop, True)
+
+    def board_during_dwell(self, bus: Bus, current_time: float) -> None:
+        stop = bus.serviceStopId
+        if stop is None or not bus.serviceBoardingOpen:
+            return
+        queue = self.waiting[stop]
+        if not queue:
+            return
+        boarded = 0
+        while queue and len(bus.onboard) < self.config["capacity"] and queue[0].arrivalTime <= current_time + 1e-9:
+            p = queue.pop(0)
+            p.boardTime = max(p.arrivalTime, self.time)
+            bus.onboard.append(p)
+            boarded += 1
+        if boarded:
+            bus.lastAction = f"蛛懷ｻ願ｿｽ荵苓ｻ・{boarded}"
+        if queue and len(bus.onboard) >= self.config["capacity"]:
+            denied_now = 0
+            for p in queue:
+                if p.arrivalTime <= current_time + 1e-9 and p.lastFullDeniedBusId != bus.id:
+                    self.record_full_denial(p, bus.id, p.arrivalTime)
+                    denied_now += 1
+            if denied_now:
+                self.fullPassLog.append({"time": current_time, "stop": stop, "busId": bus.id, "passengers": denied_now})
+        if self.config["forbidHoldingWhenFull"] and len(bus.onboard) >= self.config["capacity"]:
+            self.cancel_spring_hold_for_full_bus(bus, current_time)
+
+    def record_full_denial(self, passenger: Passenger, bus_id: int, denied_time: float) -> None:
+        passenger.deniedFullCount += 1
+        passenger.lastFullDeniedBusId = bus_id
+        if passenger.firstDeniedTime is None:
+            passenger.firstDeniedTime = denied_time
+        if passenger.skipCount > 0:
+            passenger.fullDeniedAfterControlSkipCount += 1
+
+    def cancel_spring_hold_for_full_bus(self, bus: Bus, current_time: float) -> None:
+        if bus.springHoldStartTime is None or bus.springHoldEndTime is None:
+            return
+        old_end = bus.springHoldEndTime
+        new_end = max(bus.springHoldStartTime, min(current_time, old_end))
+        if new_end >= old_end - 1e-9:
+            return
+        cancelled = old_end - new_end
+        bus.springHoldEndTime = new_end
+        bus.dwellRemaining = min(bus.dwellRemaining, max(0.0, new_end - current_time))
+        self.totalSpringHoldSec = max(0.0, self.totalSpringHoldSec - cancelled)
+        bus.totalDwell = max(0.0, bus.totalDwell - cancelled)
+        self.totalDwell = max(0.0, self.totalDwell - cancelled)
+        if bus.serviceStopId is not None:
+            stop = self.stops[bus.serviceStopId]
+            if stop.occupiedByBusId == bus.id:
+                stop.serviceEndTime = min(stop.serviceEndTime, new_end)
+            stop.totalOccupiedSec = max(0.0, stop.totalOccupiedSec - cancelled)
+        for row in reversed(self.springHoldLog):
+            if row.get("busId") == bus.id and row.get("stop") == bus.serviceStopId:
+                row["holdSec"] = max(0.0, new_end - bus.springHoldStartTime)
+                row["cancelledByFull"] = True
+                break
+        self.maxSpringHoldSec = max([float(row.get("holdSec") or 0.0) for row in self.springHoldLog], default=0.0)
 
     def calculate_dwell_time(self, bus: Bus, boarded: int, alighted: int, skip: bool) -> float:
         if boarded == 0 and alighted == 0:
@@ -557,6 +624,8 @@ class Simulation:
         deadband = self.config["springDeadbandStops"]
         hold_candidate = ctx["springSignal"] < -deadband and ctx["hFront"] < h and ctx["hBack"] > h
         if hold_candidate:
+            if self.config["forbidHoldingWhenFull"] and len(bus.onboard) >= self.config["capacity"]:
+                return {"skip": False, "holdSec": 0, "reason": "full bus holding forbidden", **ctx}
             hold_sec = clamp(
                 (-ctx["springSignal"] - deadband) * self.config["springGainSecPerStop"] - self.config["springDamping"] * bus.delaySec,
                 0,
@@ -750,8 +819,11 @@ class Simulation:
                 "minHeadwayStops": metrics["minHeadwayStops"],
                 "maxHeadwayStops": metrics["maxHeadwayStops"],
                 "headwayRmseStops": metrics["headwayRmseStops"],
-                "skipAvgExtraMin": metrics["skipAvgExtraMin"],
-                "skipMaxExtraMin": metrics["skipMaxExtraMin"],
+                "deniedPassengers": metrics["deniedPassengers"],
+                "deniedAvgExtraMin": metrics["deniedAvgExtraMin"],
+                "deniedMaxExtraMin": metrics["deniedMaxExtraMin"],
+                "controlSkipAvgExtraMin": metrics["controlSkipAvgExtraMin"],
+                "controlSkipMaxExtraMin": metrics["controlSkipMaxExtraMin"],
                 "totalSpringHoldMin": metrics["totalSpringHoldMin"],
                 "springInterventionCount": metrics["springInterventionCount"],
                 "totalBlockedDelayMin": metrics["totalBlockedDelayMin"],
@@ -773,9 +845,20 @@ class Simulation:
         rides = [(p.alightTime - p.boardTime) / 60 for p in self.completed if p.alightTime is not None and p.boardTime is not None]
         totals = [(p.alightTime - p.arrivalTime) / 60 for p in self.completed if p.alightTime is not None]
         adjusted_totals, expected_stop_sec, average_dwell_sec = self.adjusted_total_times_min()
-        skipped = [p for p in self.allPassengers.values() if p.skipCount > 0]
-        skipped_boarded = [p for p in skipped if p.boardTime is not None and p.firstSkipTime is not None]
-        skip_extra = [(p.boardTime - p.firstSkipTime) / 60 for p in skipped_boarded if p.boardTime is not None and p.firstSkipTime is not None]
+        control_skipped = [p for p in self.allPassengers.values() if p.skipCount > 0]
+        control_skipped_boarded = [p for p in control_skipped if p.boardTime is not None and p.firstSkipTime is not None]
+        control_skip_extra = [
+            (p.boardTime - p.firstSkipTime) / 60
+            for p in control_skipped_boarded
+            if p.boardTime is not None and p.firstSkipTime is not None
+        ]
+        denied = [p for p in self.allPassengers.values() if p.firstDeniedTime is not None]
+        denied_boarded = [p for p in denied if p.boardTime is not None]
+        denied_extra = [
+            (p.boardTime - p.firstDeniedTime) / 60
+            for p in denied_boarded
+            if p.boardTime is not None and p.firstDeniedTime is not None
+        ]
         headways = self.headways()
         ideal = self.config["stopCount"] / self.config["busCount"]
         min_hw = min(headways)
@@ -820,14 +903,17 @@ class Simulation:
             "expectedStopToStopSec": expected_stop_sec,
             "averageDwellSec": average_dwell_sec,
             "serviceStopCount": self.serviceStopCount,
-            "skippedPassengers": len(skipped),
-            "skipEvents": len(self.skipLog),
-            "skipAvgExtraMin": mean(skip_extra),
-            "skipMaxExtraMin": max(skip_extra) if skip_extra else 0,
-            "multiSkippedPassengers": len([p for p in skipped if p.skipCount >= 2]),
-            "deniedAfterSkip": len([p for p in self.allPassengers.values() if p.deniedAfterSkip > 0]),
+            "deniedPassengers": len(denied),
+            "deniedAvgExtraMin": mean(denied_extra),
+            "deniedMaxExtraMin": max(denied_extra) if denied_extra else 0,
+            "controlSkippedPassengers": len(control_skipped),
+            "controlSkipEvents": len(self.skipLog),
+            "controlSkipAvgExtraMin": mean(control_skip_extra),
+            "controlSkipMaxExtraMin": max(control_skip_extra) if control_skip_extra else 0,
+            "multiControlSkippedPassengers": len([p for p in control_skipped if p.skipCount >= 2]),
+            "fullDeniedAfterControlSkipPassengers": len([p for p in self.allPassengers.values() if p.fullDeniedAfterControlSkipCount > 0]),
             "fullPassEvents": len(self.fullPassLog),
-            "uniqueDeniedFull": len([p for p in self.allPassengers.values() if p.deniedFullCount > 0]),
+            "fullDeniedPassengers": len([p for p in self.allPassengers.values() if p.deniedFullCount > 0]),
             "headwayStdStops": std(headways),
             "idealHeadwayStops": ideal,
             "minHeadwayStops": min_hw,
@@ -843,13 +929,13 @@ class Simulation:
             "maxDelayMin": max(delay_by_bus) if delay_by_bus else 0,
             "loadStd": std(load_by_bus),
             "totalDwellMin": self.totalDwell / 60,
-            "totalSkips": sum(b.totalSkipped for b in self.buses),
+            "totalControlSkipPassengerEvents": sum(b.totalSkipped for b in self.buses),
             "springHoldEvents": spring_hold_events,
             "totalSpringHoldMin": self.totalSpringHoldSec / 60,
             "avgSpringHoldSec": self.totalSpringHoldSec / spring_hold_events if spring_hold_events else 0,
             "maxSpringHoldSec": self.maxSpringHoldSec,
-            "springSkipAssistEvents": self.springSkipAssistEvents,
-            "springInterventionCount": spring_hold_events + self.springSkipAssistEvents,
+            "springControlSkipAssistEvents": self.springControlSkipAssistEvents,
+            "springInterventionCount": spring_hold_events + self.springControlSkipAssistEvents,
             "springPositiveSignalAvg": mean(positive_signals) if positive_signals else 0,
             "springNegativeSignalAvg": mean(negative_signals) if negative_signals else 0,
             "springSignalAbsAvg": mean([abs(v) for v in signals]) if signals else 0,

@@ -20,15 +20,18 @@ METRIC_PRIORITY = {
     "minHeadwayStops": 3,
     "completed": 3,
     "waitingNow": 3,
-    "skippedPassengers": 3,
-    "skipAvgExtraMin": 3,
-    "skipMaxExtraMin": 3,
+    "deniedPassengers": 3,
+    "deniedAvgExtraMin": 3,
+    "deniedMaxExtraMin": 3,
+    "controlSkippedPassengers": 3,
+    "controlSkipAvgExtraMin": 3,
+    "controlSkipMaxExtraMin": 3,
     "totalSpringHoldMin": 3,
     "totalBlockedDelayMin": 3,
     "avgDelayMin": 3,
     "maxDelayMin": 3,
-    "multiSkippedPassengers": 2,
-    "deniedAfterSkip": 2,
+    "multiControlSkippedPassengers": 2,
+    "fullDeniedAfterControlSkipPassengers": 2,
     "avgTotalMin": 2,
     "top5TotalMin": 2,
     "medianWaitMin": 2,
@@ -37,7 +40,7 @@ METRIC_PRIORITY = {
     "headwayStdStops": 2,
     "headwayCv": 2,
     "avgStopOccupancyRate": 2,
-    "totalSkips": 2,
+    "totalControlSkipPassengerEvents": 2,
     "maxSpringHoldSec": 2,
     "recentAvgWaitMin": 2,
     "recentTop5WaitMin": 2,
@@ -67,15 +70,18 @@ KEY_METRICS = [
     "minHeadwayStops",
     "completed",
     "waitingNow",
-    "skippedPassengers",
-    "skipAvgExtraMin",
-    "skipMaxExtraMin",
+    "deniedPassengers",
+    "deniedAvgExtraMin",
+    "deniedMaxExtraMin",
+    "controlSkippedPassengers",
+    "controlSkipAvgExtraMin",
+    "controlSkipMaxExtraMin",
     "totalSpringHoldMin",
     "totalBlockedDelayMin",
     "avgDelayMin",
     "maxDelayMin",
-    "multiSkippedPassengers",
-    "deniedAfterSkip",
+    "multiControlSkippedPassengers",
+    "fullDeniedAfterControlSkipPassengers",
     "avgTotalMin",
     "top5TotalMin",
     "medianWaitMin",
@@ -84,7 +90,7 @@ KEY_METRICS = [
     "headwayStdStops",
     "headwayCv",
     "avgStopOccupancyRate",
-    "totalSkips",
+    "totalControlSkipPassengerEvents",
     "maxSpringHoldSec",
     "recentAvgWaitMin",
     "recentTop5WaitMin",
@@ -165,8 +171,11 @@ def build_candidate_table(aggregate: pd.DataFrame) -> pd.DataFrame:
             warnings.append("最大保持120秒超")
         if pd.notna(spring.get("totalSpringHoldMin")) and spring.get("totalSpringHoldMin") > 60:
             warnings.append("保持累計60分超")
-        if skip is not None and pd.notna(spring.get("skippedPassengers")) and pd.notna(skip.get("skippedPassengers")) and spring.get("skippedPassengers") > skip.get("skippedPassengers") * 0.5:
+        if skip is not None and pd.notna(spring.get("controlSkippedPassengers")) and pd.notna(skip.get("controlSkippedPassengers")) and spring.get("controlSkippedPassengers") > skip.get("controlSkippedPassengers") * 0.5:
             warnings.append("スキップ人数がskipの50%超")
+
+        if skip is not None and pd.notna(spring.get("deniedPassengers")) and pd.notna(skip.get("deniedPassengers")) and spring.get("deniedPassengers") > skip.get("deniedPassengers"):
+            warnings.append("乗車不可影響人数がskipより多い")
 
         if strong_warnings:
             verdict = "除外候補"
