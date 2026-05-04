@@ -438,6 +438,110 @@ def display_table(df: pd.DataFrame) -> pd.DataFrame:
     return shown.rename(columns={**COLUMN_LABELS, **PARAM_LABELS})
 
 
+def aggregate_export_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
+    shown = aggregate_df.copy()
+    shown.insert(2, "mode_label", shown["mode"].map(mode_label))
+    shown.insert(4, "metric_label", shown["metric"].map(metric_label))
+    return shown.rename(columns={**PARAM_LABELS})
+
+
+def scenario_condition(row: pd.Series | dict, param_cols: list[str]) -> str:
+    parts = []
+    for key in param_cols:
+        if key in row and pd.notna(row[key]):
+            value = row[key]
+            if isinstance(value, float):
+                value = f"{value:.6g}"
+            parts.append(f"{param_label(key)}={value}")
+    return " / ".join(parts) if parts else "基本条件"
+
+
+def scenario_mode_export_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
+    param_cols = [
+        c
+        for c in aggregate_df.columns
+        if c not in {"scenario_id", "mode", "metric", "mean", "sd", "n"}
+    ]
+    metric_wide = aggregate_df.pivot_table(
+        index=["scenario_id", "mode"],
+        columns="metric",
+        values="mean",
+        aggfunc="first",
+    ).reset_index()
+    params = aggregate_df.drop_duplicates("scenario_id")[["scenario_id", *param_cols]].copy()
+    metric_wide = metric_wide.merge(params, on="scenario_id", how="left")
+    scenario_order = {scenario_id: i + 1 for i, scenario_id in enumerate(params["scenario_id"].astype(str))}
+    metric_cols = [metric for metric in sorted_metrics(list(aggregate_df["metric"].unique())) if metric in metric_wide.columns]
+    ordered_cols = ["シナリオ", "方式", "条件", *[param_label(c) for c in param_cols], *[metric_label(c) for c in metric_cols], "内部ID"]
+
+    rows: list[dict[str, object]] = []
+    for _, row in metric_wide.iterrows():
+        scenario_id = str(row["scenario_id"])
+        out: dict[str, object] = {
+            "シナリオ": f"シナリオ{scenario_order.get(scenario_id, 0):03d}",
+            "方式": mode_label(str(row["mode"])),
+            "条件": scenario_condition(row, param_cols),
+            "内部ID": scenario_id,
+        }
+        for col in param_cols:
+            out[param_label(col)] = row.get(col)
+        for metric in metric_cols:
+            out[metric_label(metric)] = row.get(metric)
+        rows.append(out)
+
+    table = pd.DataFrame(rows)
+    mode_rank = {"制御なし": 0, "スキップ制御": 1, "スプリング法": 2}
+    if not table.empty:
+        table["_mode_rank"] = table["方式"].map(mode_rank).fillna(99)
+        table["_scenario_rank"] = table["シナリオ"].str.extract(r"(\d+)").astype(int)
+        table = table.sort_values(["_scenario_rank", "_mode_rank"]).drop(columns=["_scenario_rank", "_mode_rank"])
+    return table[[c for c in ordered_cols if c in table.columns]]
+
+
+def scenario_wide_export_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
+    param_cols = [
+        c
+        for c in aggregate_df.columns
+        if c not in {"scenario_id", "mode", "metric", "mean", "sd", "n"}
+    ]
+    params = aggregate_df.drop_duplicates("scenario_id")[["scenario_id", *param_cols]].copy()
+    pieces = [params]
+    mode_order = ["plain", "skip", "spring"]
+    stat_order = ["mean", "sd", "n"]
+    for stat in stat_order:
+        pivot = aggregate_df.pivot_table(
+            index="scenario_id",
+            columns=["mode", "metric"],
+            values=stat,
+            aggfunc="first",
+        )
+        ordered_cols = []
+        for mode_name in mode_order:
+            if mode_name not in pivot.columns.get_level_values(0):
+                continue
+            mode_metrics = sorted_metrics(list(pivot[mode_name].columns))
+            ordered_cols.extend((mode_name, metric) for metric in mode_metrics)
+        remaining = [col for col in pivot.columns if col not in ordered_cols]
+        pivot = pivot[ordered_cols + remaining].reset_index()
+        pivot.columns = [
+            "scenario_id" if col[0] == "scenario_id" else f"{col[0]}_{col[1]}_{stat}"
+            for col in pivot.columns
+        ]
+        pieces.append(pivot)
+
+    wide = pieces[0]
+    for piece in pieces[1:]:
+        wide = wide.merge(piece, on="scenario_id", how="left")
+    return wide.rename(columns={**PARAM_LABELS})
+
+
+def seed_results_export_table(results_df: pd.DataFrame) -> pd.DataFrame:
+    shown = results_df.copy()
+    if "mode" in shown.columns:
+        shown.insert(shown.columns.get_loc("mode") + 1, "mode_label", shown["mode"].map(mode_label))
+    return shown.rename(columns={**PARAM_LABELS})
+
+
 def scenario_label(row: pd.Series | dict) -> str:
     params = []
     for key in PARAM_LABELS:
@@ -760,14 +864,21 @@ def build_candidate_notes(candidate: pd.Series) -> list[str]:
     else:
         notes.append(f"{candidate.get('判定')}です。注意理由: {candidate.get('注意理由')}")
 
+    total_plain = candidate.get("adjustedAvgTotal_vs_plain_pct")
     total_skip = candidate.get("adjustedAvgTotal_vs_skip_pct")
+    wait_plain = candidate.get("avgWait_vs_plain_pct")
     wait_skip = candidate.get("avgWait_vs_skip_pct")
+    rmse_plain = candidate.get("headwayRmse_vs_plain_pct")
     rmse_skip = candidate.get("headwayRmse_vs_skip_pct")
     hold = candidate.get("totalSpringHoldMin")
+    if pd.notna(total_plain):
+        notes.append(f"制御なし比の補正総所要時間改善は {fmt_pct(total_plain)} です。")
     if pd.notna(total_skip):
         notes.append(f"skip比の補正総所要時間改善は {fmt_pct(total_skip)} です。")
-    if pd.notna(wait_skip) and pd.notna(rmse_skip):
-        notes.append(f"待ち時間は {fmt_pct(wait_skip)}、車間RMSEは {fmt_pct(rmse_skip)} 改善しています。")
+    if pd.notna(wait_plain) and pd.notna(wait_skip):
+        notes.append(f"待ち時間改善は制御なし比 {fmt_pct(wait_plain)}、skip比 {fmt_pct(wait_skip)} です。")
+    if pd.notna(rmse_plain) and pd.notna(rmse_skip):
+        notes.append(f"車間RMSE改善は制御なし比 {fmt_pct(rmse_plain)}、skip比 {fmt_pct(rmse_skip)} です。")
     if pd.notna(hold) and hold > 0:
         notes.append(f"保持累計は {fmt_num(hold, 1)} 分です。改善幅に対して運用負荷が妥当か確認してください。")
     return notes
@@ -823,6 +934,88 @@ def format_candidate_table(df: pd.DataFrame) -> pd.DataFrame:
         if column in shown:
             shown[column] = shown[column].map(lambda value, fmt=fmt: "-" if pd.isna(value) else fmt.format(value))
     return shown
+
+
+def gradient_cell_color(value: object, values: pd.Series, higher_is_better: bool = True) -> str:
+    if value is None or pd.isna(value):
+        return "#f8fafc"
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric.empty:
+        return "#ffffff"
+    lo = float(numeric.min())
+    hi = float(numeric.max())
+    if abs(hi - lo) < 1e-12:
+        score = 0.5
+    else:
+        score = (float(value) - lo) / (hi - lo)
+    if not higher_is_better:
+        score = 1 - score
+    score = max(0.0, min(1.0, score))
+    if score >= 0.5:
+        t = (score - 0.5) * 2
+        r = int(255 * (1 - t) + 219 * t)
+        g = int(255 * (1 - t) + 234 * t)
+        b = int(255 * (1 - t) + 254 * t)
+    else:
+        t = score * 2
+        r = int(254 * (1 - t) + 255 * t)
+        g = int(226 * (1 - t) + 255 * t)
+        b = int(226 * (1 - t) + 255 * t)
+    return f"rgb({r},{g},{b})"
+
+
+def candidate_table_figure(df: pd.DataFrame) -> go.Figure:
+    shown = format_candidate_table(df)
+    raw_by_label = {
+        "総合点": ("総合点", True),
+        "補正平均総所要時間": ("adjustedAvgTotalMin", False),
+        "補正上位5%総所要時間": ("adjustedTop5TotalMin", False),
+        "平均総所要時間": ("avgTotalMin", False),
+        "平均待ち時間": ("avgWaitMin", False),
+        "車間RMSE": ("headwayRmseStops", False),
+        "最大車間": ("maxHeadwayStops", False),
+        "スキップ人数": ("skippedPassengers", False),
+        "保持累計分": ("totalSpringHoldMin", False),
+        "最大保持秒": ("maxSpringHoldSec", False),
+        "制御なし比 補正総所要改善": ("adjustedAvgTotal_vs_plain_pct", True),
+        "skip比 補正総所要改善": ("adjustedAvgTotal_vs_skip_pct", True),
+        "制御なし比 総所要改善": ("avgTotal_vs_plain_pct", True),
+        "skip比 総所要改善": ("avgTotal_vs_skip_pct", True),
+        "制御なし比 待ち改善": ("avgWait_vs_plain_pct", True),
+        "skip比 待ち改善": ("avgWait_vs_skip_pct", True),
+        "制御なし比 RMSE改善": ("headwayRmse_vs_plain_pct", True),
+        "skip比 RMSE改善": ("headwayRmse_vs_skip_pct", True),
+    }
+    fill_colors: list[list[str]] = []
+    for column in shown.columns:
+        raw_info = raw_by_label.get(column)
+        if raw_info is None or raw_info[0] not in df.columns:
+            fill_colors.append(["#ffffff"] * len(shown))
+            continue
+        raw_col, higher_is_better = raw_info
+        fill_colors.append([gradient_cell_color(value, df[raw_col], higher_is_better) for value in df[raw_col]])
+    fig = go.Figure(
+        data=[
+            go.Table(
+                header={
+                    "values": list(shown.columns),
+                    "fill_color": "#111827",
+                    "font": {"color": "white", "size": 12},
+                    "align": "left",
+                    "height": 30,
+                },
+                cells={
+                    "values": [shown[column].tolist() for column in shown.columns],
+                    "fill_color": fill_colors,
+                    "font": {"color": "#111827", "size": 11},
+                    "align": "left",
+                    "height": 27,
+                },
+            )
+        ]
+    )
+    fig.update_layout(height=min(760, 110 + 28 * max(1, len(shown))), margin={"l": 0, "r": 0, "t": 0, "b": 0})
+    return fig
 
 
 def comparison_html(df: pd.DataFrame) -> str:
@@ -1040,12 +1233,12 @@ with portfolio_tab:
             st.subheader("候補ランキング")
             verdicts = ["推奨", "注意", "保留", "除外候補"]
             selected_verdicts = st.multiselect("判定フィルタ", verdicts, default=verdicts)
-            max_rows = st.slider("表示件数", min_value=5, max_value=min(100, len(candidate_table)), value=min(30, len(candidate_table)))
+            max_rows = st.slider("表示件数", min_value=1, max_value=len(candidate_table), value=min(30, len(candidate_table)))
             filtered_candidates = candidate_table[candidate_table["判定"].isin(selected_verdicts)].head(max_rows)
             if filtered_candidates.empty:
                 st.info("条件に合う候補がありません。判定フィルタを広げてください。")
                 filtered_candidates = candidate_table.head(1)
-            st.dataframe(format_candidate_table(filtered_candidates), use_container_width=True, hide_index=True)
+            st.plotly_chart(candidate_table_figure(filtered_candidates), use_container_width=True)
             options = filtered_candidates.reset_index(drop=True)
             selected_idx = st.selectbox(
                 "比較する候補",
@@ -1055,11 +1248,14 @@ with portfolio_tab:
         with right:
             selected = options.iloc[selected_idx]
             st.subheader("選択候補の読み解き")
-            metric_cols = st.columns(4)
+            metric_cols = st.columns(7)
             metric_cols[0].metric("判定", selected["判定"], selected["注意理由"])
-            metric_cols[1].metric("skip比 補正総所要", fmt_pct(selected.get("adjustedAvgTotal_vs_skip_pct")), f"{fmt_num(selected.get('adjustedAvgTotalMin'))}分")
-            metric_cols[2].metric("skip比 待ち", fmt_pct(selected.get("avgWait_vs_skip_pct")), f"{fmt_num(selected.get('avgWaitMin'))}分")
-            metric_cols[3].metric("skip比 RMSE", fmt_pct(selected.get("headwayRmse_vs_skip_pct")), f"{fmt_num(selected.get('headwayRmseStops'))}")
+            metric_cols[1].metric("制御なし比 補正総所要", fmt_pct(selected.get("adjustedAvgTotal_vs_plain_pct")), f"{fmt_num(selected.get('adjustedAvgTotalMin'))}分")
+            metric_cols[2].metric("skip比 補正総所要", fmt_pct(selected.get("adjustedAvgTotal_vs_skip_pct")), f"{fmt_num(selected.get('adjustedAvgTotalMin'))}分")
+            metric_cols[3].metric("制御なし比 待ち", fmt_pct(selected.get("avgWait_vs_plain_pct")), f"{fmt_num(selected.get('avgWaitMin'))}分")
+            metric_cols[4].metric("skip比 待ち", fmt_pct(selected.get("avgWait_vs_skip_pct")), f"{fmt_num(selected.get('avgWaitMin'))}分")
+            metric_cols[5].metric("制御なし比 RMSE", fmt_pct(selected.get("headwayRmse_vs_plain_pct")), f"{fmt_num(selected.get('headwayRmseStops'))}")
+            metric_cols[6].metric("skip比 RMSE", fmt_pct(selected.get("headwayRmse_vs_skip_pct")), f"{fmt_num(selected.get('headwayRmseStops'))}")
             st.markdown("".join(f"- {html.escape(note)}\n" for note in build_candidate_notes(selected)))
             st.markdown(comparison_html(build_mode_comparison(aggregate, selected["scenario_id"])), unsafe_allow_html=True)
 
@@ -1129,37 +1325,6 @@ with portfolio_tab:
         fig.update_layout(height=560)
         st.plotly_chart(fig, use_container_width=True)
 
-    if len(param_cols) >= 2:
-        x = st.selectbox("ヒートマップ 横軸", param_cols, index=0, format_func=param_label)
-        y_options = [col for col in param_cols if col != x]
-        y = st.selectbox("ヒートマップ 縦軸", y_options, index=0, format_func=param_label)
-        heat = top.pivot_table(index=y, columns=x, values="mean", aggfunc="mean")
-        heat_scale = "RdBu" if metric_direction(primary_metric) > 0 else "RdBu_r"
-        heat_fig = px.imshow(
-            heat,
-            aspect="auto",
-            color_continuous_scale=heat_scale,
-            title=f"{metric_label(primary_metric)} 平均 ({mode_label(mode)}) - 青が良い、赤が悪い",
-            labels={"x": param_label(x), "y": param_label(y), "color": "平均"},
-        )
-        heat_fig.update_layout(height=520)
-        st.plotly_chart(heat_fig, use_container_width=True)
-    elif len(param_cols) == 1:
-        line_top = top.sort_values(param_cols[0]).copy()
-        line_top["mode_label"] = line_top["mode"].map(mode_label)
-        st.plotly_chart(
-            px.line(
-                line_top,
-                x=param_cols[0],
-                y="mean",
-                color="mode_label",
-                markers=True,
-                color_discrete_sequence=["#2563eb", "#dc2626", "#16a34a"],
-                labels={param_cols[0]: param_label(param_cols[0]), "mean": "平均", "mode_label": "方式"},
-            ),
-            use_container_width=True,
-        )
-
 with diff_tab:
     st.subheader("方式差分")
     if candidate_table.empty:
@@ -1170,8 +1335,8 @@ with diff_tab:
         diff_verdicts = diff_control_cols[0].multiselect("判定フィルタ", verdicts, default=verdicts, key="diff_verdict_filter")
         diff_max_rows = diff_control_cols[1].slider(
             "表示件数",
-            min_value=5,
-            max_value=min(100, len(candidate_table)),
+            min_value=1,
+            max_value=len(candidate_table),
             value=min(30, len(candidate_table)),
             key="diff_max_rows",
         )
@@ -1272,6 +1437,45 @@ with risk_tab:
         st.plotly_chart(strip, use_container_width=True)
 
 with detail_tab:
+    st.subheader("全シナリオ・全方式・全指標データ")
+    scenario_mode_export = scenario_mode_export_table(aggregate)
+    aggregate_export = aggregate_export_table(aggregate)
+    scenario_wide_export = scenario_wide_export_table(aggregate)
+    seed_export = seed_results_export_table(results)
+    export_cols = st.columns(5)
+    export_cols[0].download_button(
+        "人間向けCSVをダウンロード",
+        scenario_mode_export.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{run.name}-scenarios-modes-metrics-readable.csv",
+        mime="text/csv",
+    )
+    export_cols[1].download_button(
+        "1シナリオ1行CSVをダウンロード",
+        scenario_wide_export.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{run.name}-scenario-wide-all-modes-all-metrics.csv",
+        mime="text/csv",
+    )
+    export_cols[2].download_button(
+        "縦持ち集計CSVをダウンロード",
+        aggregate_export.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{run.name}-all-scenarios-all-modes-all-metrics-aggregate.csv",
+        mime="text/csv",
+    )
+    export_cols[3].download_button(
+        "seed単位CSVをダウンロード",
+        seed_export.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"{run.name}-all-seeds-all-metrics.csv",
+        mime="text/csv",
+    )
+    export_cols[4].download_button(
+        "集計Parquetをダウンロード",
+        (run / "aggregate.parquet").read_bytes(),
+        file_name=f"{run.name}-aggregate.parquet",
+        mime="application/octet-stream",
+    )
+    st.caption("人間向けCSVは、各シナリオについて制御なし・スキップ制御・スプリング法の3行を出し、各行には比較率ではなく絶対値の全指標だけを入れます。内部IDは末尾に残します。")
+    st.dataframe(scenario_mode_export.head(300), use_container_width=True, hide_index=True)
+
     st.subheader("候補一覧")
     if not candidate_table.empty:
         st.dataframe(format_candidate_table(candidate_table), use_container_width=True, hide_index=True)
