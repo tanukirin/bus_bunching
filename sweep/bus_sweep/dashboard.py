@@ -138,6 +138,17 @@ MODE_LABELS = {
     "spring": "スプリング法",
 }
 
+MODE_COLORS = {
+    "plain": "#c83f3f",
+    "skip": "#25865f",
+    "spring": "#7357c8",
+}
+
+MODE_LABEL_COLORS = {MODE_LABELS[mode]: color for mode, color in MODE_COLORS.items()}
+
+BAD_TO_GOOD_COLORSCALE = [(0.0, "#dc2626"), (0.5, "#ffffff"), (1.0, "#16a34a")]
+GOOD_TO_BAD_COLORSCALE = [(0.0, "#16a34a"), (0.5, "#ffffff"), (1.0, "#dc2626")]
+
 METRIC_LABELS = {
     "activeBlockedBuses": "前車待ち中バス数",
     "avgBlockDurationMin": "平均前車待ち時間",
@@ -373,6 +384,10 @@ def metric_ascending(metric: str) -> bool:
 
 def metric_direction(metric: str) -> int:
     return 1 if metric in HIGHER_IS_BETTER else -1
+
+
+def metric_good_bad_colorscale(metric: str) -> list[tuple[float, str]]:
+    return BAD_TO_GOOD_COLORSCALE if metric_direction(metric) > 0 else GOOD_TO_BAD_COLORSCALE
 
 
 def mode_label(mode: str) -> str:
@@ -984,9 +999,9 @@ def gradient_cell_color(value: object, values: pd.Series, higher_is_better: bool
     score = max(0.0, min(1.0, score))
     if score >= 0.5:
         t = (score - 0.5) * 2
-        r = int(255 * (1 - t) + 219 * t)
-        g = int(255 * (1 - t) + 234 * t)
-        b = int(255 * (1 - t) + 254 * t)
+        r = int(255 * (1 - t) + 220 * t)
+        g = int(255 * (1 - t) + 252 * t)
+        b = int(255 * (1 - t) + 231 * t)
     else:
         t = score * 2
         r = int(254 * (1 - t) + 255 * t)
@@ -1054,7 +1069,7 @@ def comparison_html(df: pd.DataFrame) -> str:
     shown = format_comparison_table(df)
     for row in shown.to_dict("records"):
         verdict = row.get("判定", "")
-        color = "#2563eb" if verdict == "改善" else ("#dc2626" if verdict == "悪化" else "#6b7280")
+        color = "#16a34a" if verdict == "改善" else ("#dc2626" if verdict == "悪化" else "#6b7280")
         rows.append(
             "<tr>"
             f"<td>{html.escape(str(row.get('分類', '')))}</td>"
@@ -1195,7 +1210,7 @@ with terrain_tab:
         col.metric(label, value)
 
     st.subheader("パラメータ地形図")
-    st.caption("青が良い、赤が悪い。各図の白丸はその指標の最良点、黒枠は制約付き総合点の上位候補です。")
+    st.caption("緑が良い、赤が悪い。各図の白丸はその指標の最良点、黒枠は制約付き総合点の上位候補です。")
     if not metric_surfaces.empty and len(param_cols) >= 2:
         surface_mode = st.selectbox("地形図の方式", sorted(metric_surfaces["mode"].unique()), index=sorted(metric_surfaces["mode"].unique()).index("spring") if "spring" in set(metric_surfaces["mode"].unique()) else 0, format_func=mode_label)
         available_surface_metrics = sorted_metrics(list(metric_surfaces["metric"].dropna().unique()))
@@ -1210,11 +1225,10 @@ with terrain_tab:
                 if surface.empty:
                     continue
                 heat = surface.pivot_table(index=y_param, columns=x_param, values="mean", aggfunc="mean")
-                scale = "RdBu" if metric_direction(metric) > 0 else "RdBu_r"
                 fig = px.imshow(
                     heat,
                     aspect="auto",
-                    color_continuous_scale=scale,
+                    color_continuous_scale=metric_good_bad_colorscale(metric),
                     labels={"x": param_label(x_param), "y": param_label(y_param), "color": metric_label(metric)},
                     title=metric_label(metric),
                 )
@@ -1260,13 +1274,13 @@ with terrain_tab:
                 z=focus_heat.values,
                 x=list(focus_heat.columns),
                 y=list(focus_heat.index),
-                colorscale="RdBu" if metric_direction(focus_metric) > 0 else "RdBu_r",
+                colorscale=metric_good_bad_colorscale(focus_metric),
                 contours={"coloring": "heatmap", "showlabels": True},
                 colorbar={"title": metric_label(focus_metric)},
             )
         )
         focus_fig.update_layout(
-            title=f"{metric_label(focus_metric)} 等高線地形図 - 青が良い、赤が悪い",
+            title=f"{metric_label(focus_metric)} 等高線地形図 - 緑が良い、赤が悪い",
             xaxis_title=param_label(x_param),
             yaxis_title=param_label(y_param),
             height=560,
@@ -1319,6 +1333,14 @@ with slice_tab:
             format_func=metric_select_label,
         )
         show_sd = controls[2].checkbox("標準偏差を表示", value=False)
+        available_modes = [mode for mode in ["plain", "skip", "spring"] if mode in set(aggregate["mode"].dropna())]
+        st.caption("表示する方式を切り替えます。縦軸は表示中の方式だけで自動調整します。")
+        mode_cols = st.columns(max(1, len(available_modes)))
+        selected_modes = [
+            mode
+            for i, mode in enumerate(available_modes)
+            if mode_cols[i].checkbox(mode_label(mode), value=True, key=f"slice_mode_{mode}")
+        ]
 
         fixed_params = [param for param in param_cols if param != x_param]
         fixed_values: dict[str, object] = {}
@@ -1339,17 +1361,22 @@ with slice_tab:
 
         slice_rows = aggregate[aggregate["metric"].eq(slice_metric)].copy()
         slice_rows = filter_param_slice(slice_rows, fixed_values)
+        if selected_modes:
+            slice_rows = slice_rows[slice_rows["mode"].isin(selected_modes)]
+        else:
+            slice_rows = slice_rows.iloc[0:0]
         if slice_rows.empty:
-            st.info("選択した固定条件に一致するデータがありません。")
+            st.info("選択した固定条件と方式に一致するデータがありません。")
         else:
             slice_rows = slice_rows.sort_values([x_param, "mode"])
             slice_rows["mode_label"] = slice_rows["mode"].map(mode_label)
-            mode_order = [mode for mode in ["plain", "skip", "spring"] if mode in set(slice_rows["mode"])]
+            mode_order = [mode for mode in ["plain", "skip", "spring"] if mode in selected_modes and mode in set(slice_rows["mode"])]
             chart = px.line(
                 slice_rows,
                 x=x_param,
                 y="mean",
                 color="mode_label",
+                color_discrete_map=MODE_LABEL_COLORS,
                 markers=True,
                 error_y="sd" if show_sd and "sd" in slice_rows.columns else None,
                 category_orders={"mode_label": [mode_label(mode) for mode in mode_order]},
@@ -1372,14 +1399,19 @@ with slice_tab:
             )
             chart.update_traces(line={"width": 2.4}, marker={"size": 8})
             chart.update_layout(height=520, legend_title_text="方式")
+            chart.update_yaxes(autorange=True)
             st.plotly_chart(chart, use_container_width=True)
 
             st.subheader("重視度3以上の小型グラフ")
             priority_metrics = [metric for metric, priority in METRIC_PRIORITY.items() if priority >= 3 and metric in set(slice_metrics)]
             priority_rows = aggregate[aggregate["metric"].isin(priority_metrics)].copy()
             priority_rows = filter_param_slice(priority_rows, fixed_values)
+            if selected_modes:
+                priority_rows = priority_rows[priority_rows["mode"].isin(selected_modes)]
+            else:
+                priority_rows = priority_rows.iloc[0:0]
             if priority_rows.empty:
-                st.info("重視度3以上の指標で、選択した固定条件に一致するデータがありません。")
+                st.info("重視度3以上の指標で、選択した固定条件と方式に一致するデータがありません。")
             else:
                 priority_rows["mode_label"] = priority_rows["mode"].map(mode_label)
                 small_cols = st.columns(3)
@@ -1392,6 +1424,7 @@ with slice_tab:
                         x=x_param,
                         y="mean",
                         color="mode_label",
+                        color_discrete_map=MODE_LABEL_COLORS,
                         markers=True,
                         error_y="sd" if show_sd and "sd" in metric_rows.columns else None,
                         category_orders={"mode_label": [mode_label(mode) for mode in mode_order]},
@@ -1413,6 +1446,7 @@ with slice_tab:
                         legend_title_text="方式",
                         showlegend=i == 0,
                     )
+                    small.update_yaxes(autorange=True)
                     small_cols[i % 3].plotly_chart(small, use_container_width=True)
 
             table_cols = ["scenario_id", "mode", x_param, "mean", "sd", "n", *fixed_params]
@@ -1608,7 +1642,7 @@ with risk_tab:
                 x=metric,
                 color="判定",
                 nbins=24,
-                color_discrete_map={"推奨": "#2563eb", "注意": "#f59e0b", "保留": "#6b7280", "除外候補": "#dc2626"},
+                color_discrete_map={"推奨": "#16a34a", "注意": "#f59e0b", "保留": "#6b7280", "除外候補": "#dc2626"},
                 title=title,
             )
             fig.update_layout(height=300, showlegend=False)
@@ -1628,7 +1662,7 @@ with risk_tab:
             y="metric_label",
             color="判定",
             hover_name="scenario_label",
-            color_discrete_map={"推奨": "#2563eb", "注意": "#f59e0b", "保留": "#6b7280", "除外候補": "#dc2626"},
+            color_discrete_map={"推奨": "#16a34a", "注意": "#f59e0b", "保留": "#6b7280", "除外候補": "#dc2626"},
             title="制約・副作用の警告ストリップ",
         )
         strip.update_traces(marker={"size": 7, "opacity": 0.75})
@@ -1714,6 +1748,7 @@ with detail_tab:
                     x="t",
                     y=hist_metric,
                     color="mode_label",
+                    color_discrete_map=MODE_LABEL_COLORS,
                     title=f"{metric_label(hist_metric)}: {scenario}",
                     labels={"t": "時刻秒", hist_metric: metric_label(hist_metric), "mode_label": "方式"},
                 ),

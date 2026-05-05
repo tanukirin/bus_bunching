@@ -23,7 +23,7 @@
     "hotspotMultiplier": 3,
     "initialDelaySec": 0,
     "distanceThresholdStops": 1.8,
-    "delayThresholdMin": 5,
+    "delayThresholdMin": 6,
     "followerLoadLimit": 0.9,
     "springGainSecPerStop": 42,
     "springDeadbandStops": 1.3,
@@ -34,19 +34,17 @@
   },
   "seeds": {
     "base": 238592,
-    "count": 2000,
+    "count": 4000,
     "step": 101
   },
   "sweep": [
     {
-      "param": "delayThresholdMin",
-      "min": 0.0,
-      "max": 10.0,
-      "points": 22
+      "param": "distanceThresholdStops",
+      "values": [0.1, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.5, 1.8, 2.1, 2.4, 3.0]
     },
     {
-      "param": "forbidHoldingWhenFull",
-      "values": [true]
+      "param": "followerLoadLimit",
+      "values": [0.6, 0.7, 0.8, 0.9, 1.0]
     }
   ],
   "modes": ["plain", "skip", "spring"],
