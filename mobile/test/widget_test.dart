@@ -13,7 +13,7 @@ void main() {
     await tester.pumpWidget(const BusBunchingApp());
     final appContext = tester.element(find.byType(SimulatorHome));
     expect(Localizations.localeOf(appContext), const Locale('ja', 'JP'));
-    expect(find.bySemanticsLabel('バス団子シミュレーター'), findsOneWidget);
+    expect(find.bySemanticsLabel('だんごバス3台'), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
     expect(tester.getSize(find.byType(AppBar)).height, kToolbarHeight);
     expect(find.text('分析'), findsWidgets);

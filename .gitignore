@@ -2,6 +2,7 @@ bus-bunching-results*.json
 bus-bunching-results*.csv
 bus-bunching-metrics*.csv
 bus-bunching-config*.json
+AI_HANDOFF.md
 old/
 *.html~
 sweep/runs/

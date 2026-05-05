@@ -1,4 +1,4 @@
-# バス団子シミュレーター mobile
+# だんごバス3台 mobile
 
 Android 優先の Flutter 版です。`spring/index.html` の主要機能をスマホ向けに再構成しています。
 

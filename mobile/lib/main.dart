@@ -22,7 +22,7 @@ class BusBunchingApp extends StatelessWidget {
   Widget build(BuildContext context) {
     const seed = Color(0xff244a66);
     return MaterialApp(
-      title: 'バス団子シミュレーター',
+      title: 'だんごバス3台',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ja', 'JP'),
       supportedLocales: const [Locale('ja', 'JP')],
@@ -78,7 +78,7 @@ class _SimulatorHeader extends StatelessWidget implements PreferredSizeWidget {
       surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
       flexibleSpace: Semantics(
-        label: 'バス団子シミュレーター',
+        label: 'だんごバス3台',
         image: true,
         child: Image.asset('assets/images/header.png', fit: BoxFit.fill),
       ),
