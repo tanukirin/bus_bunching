@@ -791,10 +791,6 @@
           <div class="panel-body">
             <div class="charts">
               <div class="chart-box">
-                <div class="chart-title"><b>団子度</b><span>0-100</span></div>
-                <canvas id="bunchChart" class="chart" width="520" height="180"></canvas>
-              </div>
-              <div class="chart-box">
                 <div class="chart-title"><b>平均 / 95%待ち時間</b><span>分</span></div>
                 <canvas id="waitChart" class="chart" width="520" height="180"></canvas>
               </div>
@@ -815,7 +811,7 @@
                 <canvas id="maxHeadwayChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
-                <div class="chart-title"><b>headway RMSE</b><span>停留所数</span></div>
+                <div class="chart-title"><b>RMSE改善(団子指標)</b><span>停留所数</span></div>
                 <canvas id="rmseChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
@@ -825,14 +821,6 @@
               <div class="chart-box">
                 <div class="chart-title"><b>前車待ち遅延</b><span>累積 分</span></div>
                 <canvas id="blockedChart" class="chart" width="520" height="180"></canvas>
-              </div>
-              <div class="chart-box">
-                <div class="chart-title"><b>団子中の前車待ち</b><span>台・分</span></div>
-                <canvas id="bunchBlockedChart" class="chart" width="520" height="180"></canvas>
-              </div>
-              <div class="chart-box">
-                <div class="chart-title"><b>スプリング保持 / 介入</b><span>分 / 回</span></div>
-                <canvas id="springChart" class="chart" width="520" height="180"></canvas>
               </div>
             </div>
           </div>
@@ -2721,8 +2709,6 @@
         const waitSpring = improve(g, "avgWaitMin");
         const totalSkip = improve(s, "adjustedAvgTotalMin");
         const totalSpring = improve(g, "adjustedAvgTotalMin");
-        const bunchSkip = improve(s, "bunchScore");
-        const bunchSpring = improve(g, "bunchScore");
         const rmseSkip = improve(s, "headwayRmseStops");
         const rmseSpring = improve(g, "headwayRmseStops");
         const blockedSkip = improve(s, "totalBlockedDelayMin");
@@ -2732,8 +2718,7 @@
         $("summary").innerHTML = [
           this.metric("待ち時間改善", `S ${fmt(waitSkip,0)}% / Sp ${fmt(waitSpring,0)}%`, `なし ${fmt(p.avgWaitMin)} / スキップ ${fmt(s.avgWaitMin)} / スプリング ${fmt(g.avgWaitMin)} 分`, Math.max(waitSkip, waitSpring) > 5 ? "good" : Math.max(waitSkip, waitSpring) < -3 ? "bad" : "warn"),
           this.metric("補正総所要時間改善", `S ${fmt(totalSkip,0)}% / Sp ${fmt(totalSpring,0)}%`, `なし ${fmt(p.adjustedAvgTotalMin)} / スキップ ${fmt(s.adjustedAvgTotalMin)} / スプリング ${fmt(g.adjustedAvgTotalMin)} 分`, Math.max(totalSkip, totalSpring) > 5 ? "good" : Math.max(totalSkip, totalSpring) < -3 ? "bad" : "warn"),
-          this.metric("団子削減", `S ${fmt(bunchSkip,0)}% / Sp ${fmt(bunchSpring,0)}%`, `団子度 ${fmt(p.bunchScore,0)} → ${fmt(s.bunchScore,0)} / ${fmt(g.bunchScore,0)}`, Math.max(bunchSkip, bunchSpring) > 8 ? "good" : "warn"),
-          this.metric("RMSE改善", `S ${fmt(rmseSkip,0)}% / Sp ${fmt(rmseSpring,0)}%`, `車間RMSE ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)}`, Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn"),
+          this.metric("RMSE改善(団子指標)", `S ${fmt(rmseSkip,0)}% / Sp ${fmt(rmseSpring,0)}%`, `車間RMSE ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)}`, Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn"),
           this.metric("最大車間", `${fmt(g.maxHeadwayStops)}停`, `なし ${fmt(p.maxHeadwayStops)} / スキップ ${fmt(s.maxHeadwayStops)}停`, g.maxHeadwayStops <= s.maxHeadwayStops ? "good" : "warn"),
           this.metric("前車待ち削減", `S ${fmt(blockedSkip,0)}% / Sp ${fmt(blockedSpring,0)}%`, `総 ${fmt(p.totalBlockedDelayMin)} → ${fmt(s.totalBlockedDelayMin)} / ${fmt(g.totalBlockedDelayMin)} 分`, Math.max(blockedSkip, blockedSpring) > 8 ? "good" : "warn"),
           this.metric("乗車不可", `S ${fmt(s.deniedPassengers,0)} / Sp ${fmt(g.deniedPassengers,0)}人`, `最大追加待ち ${fmt(s.deniedMaxExtraMin)} / ${fmt(g.deniedMaxExtraMin)} 分`, deniedClass),
@@ -2865,9 +2850,6 @@
           color: MODE_COLORS[mode],
           data: (data[`${mode}History`] || []).map((h) => [h.t/60, h[key]])
         }));
-        this.drawLineChart($("bunchChart"), [
-          ...modeSeries("bunchScore")
-        ], 100, durationMin);
         this.drawLineChart($("waitChart"), [
           { name: "なし平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.avgWaitMin]) },
           { name: "スキップ平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.avgWaitMin]) },
@@ -2904,11 +2886,6 @@
           { name: "スプリング乗車不可最大追加", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.deniedMaxExtraMin]), dash: true }
         ], null, durationMin);
         this.drawLineChart($("blockedChart"), modeSeries("totalBlockedDelayMin"), null, durationMin);
-        this.drawLineChart($("bunchBlockedChart"), modeSeries("blockedDuringBunchMin"), null, durationMin);
-        this.drawLineChart($("springChart"), [
-          { name: "保持累積分", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.totalSpringHoldMin || 0]) },
-          { name: "介入回数", color: "#b47b13", data: springHistory.map((h) => [h.t/60, h.springInterventionCount || 0]), dash: true }
-        ], null, durationMin);
       }
 
       drawLineChart(canvas, series, fixedMax = null, durationMin = this.config.durationMin) {
@@ -2964,7 +2941,7 @@
       }
 
       clearCharts(message) {
-        const ids = ["bunchChart", "waitChart", "totalTimeChart", "recentWaitChart", "headwayChart", "maxHeadwayChart", "rmseChart", "harmChart", "blockedChart", "bunchBlockedChart", "springChart"];
+        const ids = ["waitChart", "totalTimeChart", "recentWaitChart", "headwayChart", "maxHeadwayChart", "rmseChart", "harmChart", "blockedChart"];
         for (const id of ids) {
           const canvas = $(id);
           const ctx = canvas.getContext("2d");

@@ -34,19 +34,19 @@
   },
   "seeds": {
     "base": 238592,
-    "count": 400,
+    "count": 2000,
     "step": 101
   },
   "sweep": [
     {
-      "param": "forbidHoldingWhenFull",
-      "values": [false, true]
+      "param": "delayThresholdMin",
+      "min": 0.0,
+      "max": 10.0,
+      "points": 22
     },
     {
-      "param": "demandMultiplier",
-      "min": 0.2,
-      "max": 3.0,
-      "points": 15
+      "param": "forbidHoldingWhenFull",
+      "values": [true]
     }
   ],
   "modes": ["plain", "skip", "spring"],

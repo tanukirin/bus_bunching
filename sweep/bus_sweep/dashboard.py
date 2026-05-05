@@ -105,12 +105,13 @@ LOWER_IS_BETTER = {
 
 DECISION_WEIGHTS = derived_data.DECISION_WEIGHTS
 
-CANDIDATE_DISPLAY_COLUMNS = [
+CANDIDATE_FRONT_COLUMNS = [
     "判定",
     "順位",
     "総合点",
-    "スプリングゲイン",
-    "スプリング不感帯",
+]
+
+CANDIDATE_METRIC_COLUMNS = [
     "補正平均総所要時間",
     "制御なし比 補正総所要改善",
     "skip比 補正総所要改善",
@@ -302,6 +303,7 @@ PARAM_LABELS = {
     "springDamping": "スプリング遅延減衰",
     "springMaxHoldSec": "最大スプリング保持秒",
     "springMinHoldSec": "最小スプリング保持秒",
+    "forbidHoldingWhenFull": "満員時の保持禁止",
 }
 
 COLUMN_LABELS = {
@@ -523,11 +525,11 @@ def seed_results_export_table(results_df: pd.DataFrame) -> pd.DataFrame:
     return shown.rename(columns={**PARAM_LABELS})
 
 
-def scenario_label(row: pd.Series | dict) -> str:
+def scenario_label(row: pd.Series | dict, param_cols: list[str] | None = None) -> str:
     params = []
-    for key in PARAM_LABELS:
-        if key in row and pd.notna(row[key]):
-            params.append(f"{param_label(key)}={row[key]}")
+    for key in (param_cols if param_cols is not None else list(PARAM_LABELS)):
+        if key in row and not is_missing(row[key]):
+            params.append(f"{param_label(key)}={fmt_param_value(row[key])}")
     return " / ".join(params) if params else str(row.get("scenario_id", "base"))
 
 
@@ -572,11 +574,28 @@ def fmt_num(value: float | int | None, digits: int = 2) -> str:
     return f"{value:.{digits}f}"
 
 
+def is_missing(value: object) -> bool:
+    if value is None:
+        return True
+    try:
+        missing = pd.isna(value)
+    except (TypeError, ValueError):
+        return False
+    try:
+        return bool(missing)
+    except (TypeError, ValueError):
+        return False
+
+
 def fmt_param_value(value: object) -> str:
-    if pd.isna(value):
+    if is_missing(value):
         return "-"
+    if isinstance(value, bool):
+        return "true" if value else "false"
     if isinstance(value, float):
         return f"{value:.6g}"
+    if isinstance(value, (list, tuple)):
+        return ", ".join(fmt_param_value(item) for item in value)
     return str(value)
 
 
@@ -820,7 +839,7 @@ def build_candidate_table(aggregate_df: pd.DataFrame) -> pd.DataFrame:
         out = spring.to_dict()
         out.update(
             {
-                "scenario_label": scenario_label(spring),
+                "scenario_label": scenario_label(spring, param_cols),
                 "総合点": score,
                 "判定": verdict,
                 "注意理由": " / ".join([*strong_warnings, *warnings]) if strong_warnings or warnings else "なし",
@@ -886,7 +905,9 @@ def build_candidate_notes(candidate: pd.Series) -> list[str]:
 
 
 def format_candidate_table(df: pd.DataFrame) -> pd.DataFrame:
+    param_cols = [col for col in df.columns if col in PARAM_LABELS]
     rename = {
+        **{col: param_label(col) for col in param_cols},
         "springGainSecPerStop": "スプリングゲイン",
         "springDeadbandStops": "スプリング不感帯",
         "adjustedAvgTotalMin": "補正平均総所要時間",
@@ -908,7 +929,16 @@ def format_candidate_table(df: pd.DataFrame) -> pd.DataFrame:
         "maxSpringHoldSec": "最大保持秒",
     }
     shown = df.rename(columns=rename).copy()
-    shown = shown[[c for c in CANDIDATE_DISPLAY_COLUMNS if c in shown.columns]]
+    display_columns = [
+        *CANDIDATE_FRONT_COLUMNS,
+        *[param_label(col) for col in param_cols],
+        *CANDIDATE_METRIC_COLUMNS,
+    ]
+    shown = shown[[c for c in display_columns if c in shown.columns]]
+    for col in param_cols:
+        label = param_label(col)
+        if label in shown:
+            shown[label] = shown[label].map(fmt_param_value)
     formats = {
         "総合点": "{:.1f}",
         "スプリングゲイン": "{:.2f}",
