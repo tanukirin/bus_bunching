@@ -315,7 +315,7 @@ class SimulationEngine {
     final routeStart = bus.routePos.isFinite ? bus.routePos.floor() : fromStop;
     final circularFrom = positiveModulo(routeStart, config.stopCount).toInt();
     final duration = math.max(
-      18,
+      1e-9,
       config.baseTravelSec +
           EventGenerator.travelNoise(config, circularFrom, time),
     );
@@ -831,14 +831,14 @@ class SimulationEngine {
     int alightingCount = 0,
   ]) {
     final ctx = headwayContext(bus);
-    bus.lastSpringSignal = ctx['springSignal']!;
+    final springSignal = ctx['springSignal'] as double;
+    final hFront = ctx['hFront'] as double;
+    final hBack = ctx['hBack'] as double;
+    final h = ctx['idealHeadwayStops'] as double;
+    bus.lastSpringSignal = springSignal;
     springSignalLog.add({'time': time, 'busId': bus.id, 'stop': stop, ...ctx});
-    final h = ctx['idealHeadwayStops']!;
     final deadband = config.springDeadbandStops;
-    final holdCandidate =
-        ctx['springSignal']! < -deadband &&
-        ctx['hFront']! < h &&
-        ctx['hBack']! > h;
+    final holdCandidate = springSignal < -deadband && hFront < h && hBack > h;
     if (holdCandidate) {
       if (config.forbidHoldingWhenFull &&
           bus.onboard.length >= config.capacity) {
@@ -850,7 +850,7 @@ class SimulationEngine {
         };
       }
       final holdSec = clampDouble(
-        (-ctx['springSignal']! - deadband) * config.springGainSecPerStop -
+        (-springSignal - deadband) * config.springGainSecPerStop -
             config.springDamping * bus.delaySec,
         0,
         config.springMaxHoldSec,
@@ -864,10 +864,7 @@ class SimulationEngine {
         };
       }
     }
-    final skipCandidate =
-        ctx['springSignal']! > math.max(deadband, 0.5) &&
-        ctx['hFront']! > h &&
-        ctx['hBack']! < h;
+    final skipCandidate = springSignal > deadband && hFront > h && hBack < h;
     if (!skipCandidate)
       return {
         'skip': false,
@@ -877,13 +874,15 @@ class SimulationEngine {
       };
     final base = distanceSkipDecision(bus, stop, alightingCount, true);
     if (base['skip'] != true) return {...base, 'assist': false};
-    if (!springSkipImprovesHeadway(bus, stop, alightingCount)) {
-      return {'skip': false, 'holdSec': 0.0, 'reason': 'spring headway cost'};
-    }
-    return {...base, 'assist': true, ...ctx};
+    return {
+      ...base,
+      'assist': true,
+      'reason': '${base['reason']} spring=${springSignal.toStringAsFixed(2)}',
+      ...ctx,
+    };
   }
 
-  Map<String, double> headwayContext(BusState bus) {
+  Map<String, dynamic> headwayContext(BusState bus) {
     final leader = findLeader(bus);
     final follower = findFollower(bus);
     final hFront = leader == null
@@ -894,52 +893,13 @@ class SimulationEngine {
         : routeDistanceBehind(follower, bus);
     final ideal = config.stopCount / config.busCount;
     return {
+      'leaderId': leader?.id,
+      'followerId': follower?.id,
       'hFront': hFront,
       'hBack': hBack,
       'idealHeadwayStops': ideal,
       'springSignal': hFront - hBack,
     };
-  }
-
-  bool springSkipImprovesHeadway(BusState bus, int stop, int alightingCount) {
-    final capacityLeft = math.max(0, config.capacity - bus.onboard.length);
-    final boardedIfNormal = math.min(capacityLeft, waiting[stop].length);
-    final savedDwell = calculateDwellTime(
-      bus,
-      boardedIfNormal,
-      alightingCount,
-      false,
-    );
-    final forwardStops = clampDouble(
-      savedDwell / math.max(1, config.baseTravelSec),
-      0,
-      config.stopCount / 2,
-    );
-    if (forwardStops <= 0) return true;
-    return headwayErrorCost(bus.id, forwardStops) < headwayErrorCost();
-  }
-
-  double headwayErrorCost([int? busId, double forwardStops = 0]) {
-    final ideal = config.stopCount / config.busCount;
-    final positions =
-        buses
-            .map(
-              (bus) => positiveModulo(
-                bus.pos + (bus.id == busId ? forwardStops : 0),
-                config.stopCount,
-              ),
-            )
-            .toList()
-          ..sort();
-    var cost = 0.0;
-    for (var i = 0; i < positions.length; i++) {
-      final gap = positiveModulo(
-        positions[(i + 1) % positions.length] - positions[i],
-        config.stopCount,
-      );
-      cost += math.pow(gap - ideal, 2).toDouble();
-    }
-    return cost;
   }
 
   BusState? findFollower(BusState bus) {

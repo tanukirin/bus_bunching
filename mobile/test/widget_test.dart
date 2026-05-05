@@ -7,13 +7,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart' hide ComparisonResult;
 
 void main() {
-  testWidgets('analysis controls stay pinned and metrics are collapsed', (
+  testWidgets('analysis controls sit above tabs and metrics are collapsed', (
     tester,
   ) async {
     await tester.pumpWidget(const BusBunchingApp());
-    expect(find.text('バス団子シミュレーター'), findsOneWidget);
+    expect(find.bySemanticsLabel('バス団子シミュレーター'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+    expect(tester.getSize(find.byType(AppBar)).height, kToolbarHeight);
     expect(find.text('分析'), findsWidgets);
     expect(find.text('再生'), findsOneWidget);
+    final panelRect = tester.getRect(find.byType(ControlPanel));
+    final navigationRect = tester.getRect(find.byType(NavigationBar));
+    expect(panelRect.bottom, lessThanOrEqualTo(navigationRect.top));
+    expect(navigationRect.top - panelRect.bottom, lessThanOrEqualTo(8));
     expect(find.byTooltip('10分戻す'), findsOneWidget);
     expect(find.byTooltip('リセット'), findsNothing);
     expect(find.textContaining('seed '), findsNothing);
@@ -82,19 +88,33 @@ void main() {
       includeHistory: true,
       engine: 'fast',
     );
+    var seedSummaryMode = SummaryMetricDisplayMode.percent;
     await tester.pumpWidget(
       MaterialApp(
-        home: SeedAveragePage(
-          config: result.config,
-          progress: null,
-          result: result,
-          status: '完了',
-          running: false,
-          onRun: (_, _) async {},
-          onCancel: () {},
+        home: StatefulBuilder(
+          builder: (context, setState) => SeedAveragePage(
+            config: result.config,
+            progress: null,
+            result: result,
+            status: '完了',
+            running: false,
+            summaryMetricMode: seedSummaryMode,
+            onToggleSummaryMetricMode: () => setState(
+              () => seedSummaryMode =
+                  seedSummaryMode == SummaryMetricDisplayMode.percent
+                  ? SummaryMetricDisplayMode.absolute
+                  : SummaryMetricDisplayMode.percent,
+            ),
+            onRun: (_, _) async {},
+            onCancel: () {},
+          ),
         ),
       ),
     );
+    expect(find.text('％'), findsOneWidget);
+    expect(find.text('値'), findsOneWidget);
+    await tester.tap(find.text('値'));
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
       find.text('破線は上位5%または最大'),
       600,
@@ -198,6 +218,14 @@ void main() {
       direction: MetricDirection.higherBetter,
     );
     expect(metricDeltaTone(higherBetter, 100, 106), MetricDeltaTone.improved);
+    const minHeadway = MetricDefinition(
+      'minHeadwayStops',
+      '最小車間',
+      '停',
+      direction: MetricDirection.higherBetter,
+    );
+    expect(metricDeltaTone(minHeadway, 10, 12), MetricDeltaTone.improved);
+    expect(metricDeltaTone(minHeadway, 10, 8), MetricDeltaTone.worsened);
   });
 
   test('bus visual state colors are state based', () {

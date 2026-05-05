@@ -53,6 +53,31 @@ class SimulatorHome extends StatefulWidget {
   State<SimulatorHome> createState() => _SimulatorHomeState();
 }
 
+class _SimulatorHeader extends StatelessWidget implements PreferredSizeWidget {
+  const _SimulatorHeader();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      automaticallyImplyLeading: false,
+      toolbarHeight: kToolbarHeight,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      flexibleSpace: Semantics(
+        label: 'バス団子シミュレーター',
+        image: true,
+        child: Image.asset('assets/images/header.png', fit: BoxFit.fill),
+      ),
+    );
+  }
+}
+
 class _SimulatorHomeState extends State<SimulatorHome> {
   late SimulationConfig _config = presets['urban']!;
   late ComparisonRunner _runner = ComparisonRunner(_config);
@@ -422,14 +447,7 @@ class _SimulatorHomeState extends State<SimulatorHome> {
       AnalysisPage(
         result: _result,
         runner: _runner,
-        running: _running,
-        speed: _speed,
-        onToggleRun: _toggleRun,
-        onRewind: _rewind10Minutes,
-        onSpeedChanged: (value) => setState(() => _speed = value),
         metricsExpanded: _metricsExpanded,
-        onToggleMetricsExpanded: () =>
-            setState(() => _metricsExpanded = !_metricsExpanded),
         summaryMetricMode: _summaryMetricMode,
         onToggleSummaryMetricMode: () => setState(
           () => _summaryMetricMode =
@@ -460,6 +478,13 @@ class _SimulatorHomeState extends State<SimulatorHome> {
         result: _seedAverage,
         status: _seedStatus,
         running: _seedHandle != null,
+        summaryMetricMode: _summaryMetricMode,
+        onToggleSummaryMetricMode: () => setState(
+          () => _summaryMetricMode =
+              _summaryMetricMode == SummaryMetricDisplayMode.percent
+              ? SummaryMetricDisplayMode.absolute
+              : SummaryMetricDisplayMode.percent,
+        ),
         onRun: _runSeedAverage,
         onCancel: _cancelSeedAverage,
       ),
@@ -516,31 +541,51 @@ class _SimulatorHomeState extends State<SimulatorHome> {
       ),
     ];
     return Scaffold(
-      appBar: AppBar(title: const Text('バス団子シミュレーター'), centerTitle: false),
+      appBar: const _SimulatorHeader(),
       body: SafeArea(child: pages[_tab]),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (index) => setState(() => _tab = index),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.analytics_outlined),
-            selectedIcon: Icon(Icons.analytics),
-            label: '分析',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune),
-            label: '設定',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.functions_outlined),
-            selectedIcon: Icon(Icons.functions),
-            label: 'シード平均',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.ios_share_outlined),
-            selectedIcon: Icon(Icons.ios_share),
-            label: '入出力',
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_tab == 0)
+            _BottomControlPanel(
+              child: ControlPanel(
+                running: _running,
+                speed: _speed,
+                time: _runner.time,
+                durationSec: _result.config.durationSec,
+                onToggleRun: _toggleRun,
+                onRewind: _rewind10Minutes,
+                onSpeedChanged: (value) => setState(() => _speed = value),
+                metricsExpanded: _metricsExpanded,
+                onToggleMetricsExpanded: () =>
+                    setState(() => _metricsExpanded = !_metricsExpanded),
+              ),
+            ),
+          NavigationBar(
+            selectedIndex: _tab,
+            onDestinationSelected: (index) => setState(() => _tab = index),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.analytics_outlined),
+                selectedIcon: Icon(Icons.analytics),
+                label: '分析',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.tune_outlined),
+                selectedIcon: Icon(Icons.tune),
+                label: '設定',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.functions_outlined),
+                selectedIcon: Icon(Icons.functions),
+                label: 'シード平均',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.ios_share_outlined),
+                selectedIcon: Icon(Icons.ios_share),
+                label: '入出力',
+              ),
+            ],
           ),
         ],
       ),
@@ -553,26 +598,14 @@ class AnalysisPage extends StatelessWidget {
     super.key,
     required this.result,
     required this.runner,
-    required this.running,
-    required this.speed,
-    required this.onToggleRun,
-    required this.onRewind,
-    required this.onSpeedChanged,
     required this.metricsExpanded,
-    required this.onToggleMetricsExpanded,
     required this.summaryMetricMode,
     required this.onToggleSummaryMetricMode,
   });
 
   final ComparisonResult result;
   final ComparisonRunner runner;
-  final bool running;
-  final double speed;
-  final VoidCallback onToggleRun;
-  final VoidCallback onRewind;
-  final ValueChanged<double> onSpeedChanged;
   final bool metricsExpanded;
-  final VoidCallback onToggleMetricsExpanded;
   final SummaryMetricDisplayMode summaryMetricMode;
   final VoidCallback onToggleSummaryMetricMode;
 
@@ -580,22 +613,6 @@ class AnalysisPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return CustomScrollView(
       slivers: [
-        SliverPersistentHeader(
-          pinned: true,
-          delegate: _ControlPanelHeaderDelegate(
-            child: ControlPanel(
-              running: running,
-              speed: speed,
-              time: runner.time,
-              durationSec: result.config.durationSec,
-              onToggleRun: onToggleRun,
-              onRewind: onRewind,
-              onSpeedChanged: onSpeedChanged,
-              metricsExpanded: metricsExpanded,
-              onToggleMetricsExpanded: onToggleMetricsExpanded,
-            ),
-          ),
-        ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(10, 8, 10, 24),
           sliver: SliverList(
@@ -630,35 +647,23 @@ class AnalysisPage extends StatelessWidget {
   }
 }
 
-class _ControlPanelHeaderDelegate extends SliverPersistentHeaderDelegate {
-  const _ControlPanelHeaderDelegate({required this.child});
+class _BottomControlPanel extends StatelessWidget {
+  const _BottomControlPanel({required this.child});
 
   final Widget child;
 
   @override
-  double get minExtent => 112;
-
-  @override
-  double get maxExtent => 112;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
+  Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
-        boxShadow: overlapsContent
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ]
-            : const [],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 8,
+            offset: const Offset(0, -3),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
@@ -666,10 +671,6 @@ class _ControlPanelHeaderDelegate extends SliverPersistentHeaderDelegate {
       ),
     );
   }
-
-  @override
-  bool shouldRebuild(covariant _ControlPanelHeaderDelegate oldDelegate) =>
-      oldDelegate.child != child;
 }
 
 class ControlPanel extends StatelessWidget {
@@ -706,11 +707,18 @@ class ControlPanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                FilledButton.icon(
-                  onPressed: onToggleRun,
-                  icon: Icon(running ? Icons.pause : Icons.play_arrow),
-                  label: Text(running ? '一時停止' : '再生'),
-                ),
+                if (running)
+                  IconButton.filled(
+                    onPressed: onToggleRun,
+                    tooltip: '一時停止',
+                    icon: const Icon(Icons.pause),
+                  )
+                else
+                  FilledButton.icon(
+                    onPressed: onToggleRun,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('再生'),
+                  ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
                   onPressed: onRewind,
@@ -876,7 +884,12 @@ const _detailMetricDefinitions = [
   ),
   MetricDefinition('averageDwellSec', '平均停車', '秒', detailLabel: '平均停車'),
   MetricDefinition('bunchScore', '団子度', '', digits: 0),
-  MetricDefinition('minHeadwayStops', '最小車間', '停'),
+  MetricDefinition(
+    'minHeadwayStops',
+    '最小車間',
+    '停',
+    direction: MetricDirection.higherBetter,
+  ),
   MetricDefinition('maxHeadwayStops', '最大車間', '停'),
   MetricDefinition('headwayRmseStops', '車間RMSE', '停'),
   MetricDefinition('headwayCv', '車間CV', ''),
@@ -2433,6 +2446,8 @@ class SeedAveragePage extends StatefulWidget {
     required this.result,
     required this.status,
     required this.running,
+    required this.summaryMetricMode,
+    required this.onToggleSummaryMetricMode,
     required this.onRun,
     required this.onCancel,
   });
@@ -2442,6 +2457,8 @@ class SeedAveragePage extends StatefulWidget {
   final SeedAverageResult? result;
   final String? status;
   final bool running;
+  final SummaryMetricDisplayMode summaryMetricMode;
+  final VoidCallback onToggleSummaryMetricMode;
   final Future<void> Function(int baseSeed, int count) onRun;
   final VoidCallback onCancel;
 
@@ -2562,7 +2579,11 @@ class _SeedAveragePageState extends State<SeedAveragePage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  SummaryGrid(result: comparisonResult!),
+                  SummaryGrid(
+                    result: comparisonResult!,
+                    displayMode: widget.summaryMetricMode,
+                    onToggleDisplayMode: widget.onToggleSummaryMetricMode,
+                  ),
                   const SizedBox(height: 12),
                   DetailedMetricsCard(result: comparisonResult),
                 ],

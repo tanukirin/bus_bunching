@@ -54,6 +54,8 @@ bool _truthy(dynamic value, {bool fallback = false}) {
   return !{'false', '0', 'no', 'off'}.contains(text);
 }
 
+bool _sweepStrictTrue(dynamic value) => value == true || value == 'true';
+
 double legacyDelayScaleToMean(double baseTravelSec, double scaleSec) =>
     math.max(0, baseTravelSec * 0.02 + math.max(0, scaleSec) * noiseMeanFactor);
 
@@ -258,23 +260,25 @@ SimulationConfig normalizeConfig(Map<String, dynamic> raw) {
   final baseTravelSec = distance / baseSpeed * 3600;
   final legacyScale = _number(raw['randomDelaySec'], 26);
   final rawMean = _number(raw['randomDelayMeanSec'], double.nan);
+  final hasLegacyStopKeys =
+      raw.containsKey('stopManeuverLossSec') || raw.containsKey('doorTimeSec');
   final fixedStop = raw.containsKey('fixedStopSec')
       ? math.max(0, _number(raw['fixedStopSec'], 18))
-      : math.max(
+      : hasLegacyStopKeys
+      ? math.max(
           0,
-          _number(raw['stopManeuverLossSec'], 10) +
-              _number(raw['doorTimeSec'], 3),
-        );
+          _number(raw['stopManeuverLossSec'], 0) +
+              _number(raw['doorTimeSec'], 0),
+        )
+      : 10.0;
   final rawHotspots = raw['hotspotStops'];
   final hotspots = rawHotspots is Iterable
       ? rawHotspots
             .whereType<num>()
             .map((value) => value.toInt())
             .where((value) => value >= 0 && value < stopCount)
-            .toSet()
             .toList()
       : <int>[];
-  hotspots.sort();
   return SimulationConfig(
     name: (raw['name'] ?? 'カスタム').toString(),
     seed: _number(raw['seed'], 1).round().clamp(1, 0x7fffffff),
@@ -282,7 +286,7 @@ SimulationConfig normalizeConfig(Map<String, dynamic> raw) {
     stopCount: stopCount,
     busCount: busCount,
     demandMultiplier: math.max(0, _number(raw['demandMultiplier'], 0.8)),
-    capacity: math.max(1, _number(raw['capacity'], 36).round()),
+    capacity: math.max(1, _number(raw['capacity'], 36).toInt()),
     baseSpeedKmh: baseSpeed,
     stopDistanceKm: distance,
     boardTimeSec: math.max(0, _number(raw['boardTimeSec'], 3)),
@@ -295,7 +299,7 @@ SimulationConfig normalizeConfig(Map<String, dynamic> raw) {
     ),
     hotspotStops: hotspots,
     hotspotMultiplier: math.max(0, _number(raw['hotspotMultiplier'], 1)),
-    protectHotspotStops: _truthy(raw['protectHotspotStops']),
+    protectHotspotStops: _sweepStrictTrue(raw['protectHotspotStops']),
     initialDelaySec: math.max(0, _number(raw['initialDelaySec'], 0)),
     distanceThresholdStops: math.max(
       0,

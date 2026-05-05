@@ -75,6 +75,96 @@ void main() {
     }
   });
 
+  test('short travel segments are not floored to 18 seconds', () {
+    final config = normalizeConfig({
+      'durationMin': 1,
+      'stopCount': 4,
+      'busCount': 1,
+      'baseSpeedKmh': 3600,
+      'stopDistanceKm': 0.001,
+      'randomDelayMeanSec': 0,
+    });
+    final sim = SimulationEngine(config, 'plain', const []);
+    expect(sim.buses.single.segmentDuration, greaterThan(0));
+    expect(sim.buses.single.segmentDuration, lessThan(18));
+  });
+
+  test('spring skip follows sweep deadband and assist behavior', () {
+    final config = normalizeConfig({
+      'durationMin': 1,
+      'stopCount': 10,
+      'busCount': 3,
+      'capacity': 10,
+      'baseSpeedKmh': 3600,
+      'stopDistanceKm': 1,
+      'fixedStopSec': 20,
+      'boardTimeSec': 0,
+      'boardingSetupSec': 0,
+      'alightTimeSec': 0,
+      'alightingSetupSec': 0,
+      'distanceThresholdStops': 3.3,
+      'delayThresholdMin': 0,
+      'followerLoadLimit': 1,
+      'springDeadbandStops': 0.2,
+      'forbidHoldingWhenFull': false,
+    });
+    final sim = SimulationEngine(config, 'spring', const []);
+    final bus = sim.buses[0]
+      ..routePos = 0
+      ..pos = 0
+      ..delaySec = 60;
+    sim.buses[1]
+      ..routePos = 3.5
+      ..pos = 3.5;
+    sim.buses[2]
+      ..routePos = -3.2
+      ..pos = positiveModulo(-3.2, config.stopCount);
+    sim.waiting[0].add(Passenger(id: 1, origin: 0, dest: 4, arrivalTime: 0));
+
+    final decision = sim.springDecision(bus, 0);
+
+    expect(decision['skip'], isTrue);
+    expect(decision['assist'], isTrue);
+    expect(decision['reason'], contains('spring=0.30'));
+    expect(sim.springSignalLog.single['leaderId'], sim.buses[1].id);
+    expect(sim.springSignalLog.single['followerId'], sim.buses[2].id);
+  });
+
+  test('config normalization matches chosen sweep compatibility rules', () {
+    final config = normalizeConfig({
+      'stopCount': 5,
+      'capacity': 36.9,
+      'seed': 999999999999,
+      'initialDelaySec': -5,
+      'protectHotspotStops': 'yes',
+      'hotspotStops': [3, 1, 3, 9, -1],
+    });
+
+    expect(config.fixedStopSec, 10);
+    expect(config.capacity, 36);
+    expect(config.seed, 0x7fffffff);
+    expect(config.initialDelaySec, 0);
+    expect(config.protectHotspotStops, isFalse);
+    expect(config.forbiddenStops, isEmpty);
+    expect(config.hotspotStops, [3, 1, 3]);
+
+    final protected = normalizeConfig({
+      'stopCount': 5,
+      'protectHotspotStops': 'true',
+      'hotspotStops': [3, 1, 3],
+    });
+    expect(protected.protectHotspotStops, isTrue);
+    expect(protected.forbiddenStops, [3, 1, 3]);
+
+    final numericProtected = normalizeConfig({
+      'stopCount': 5,
+      'protectHotspotStops': 1,
+      'hotspotStops': [3],
+    });
+    expect(numericProtected.protectHotspotStops, isFalse);
+    expect(numericProtected.forbiddenStops, isEmpty);
+  });
+
   test('comparison runner shares demand events across modes', () {
     final runner = ComparisonRunner(presets['urban']!.copyWith(durationMin: 8));
     expect(
@@ -126,6 +216,45 @@ void main() {
         }
       }
     }
+  });
+
+  test('full bus still cancels active spring hold during dwell', () {
+    final config = normalizeConfig({
+      'durationMin': 1,
+      'stopCount': 6,
+      'busCount': 2,
+      'capacity': 1,
+      'forbidHoldingWhenFull': true,
+    });
+    final sim = SimulationEngine(config, 'spring', const []);
+    final bus = sim.buses.first
+      ..status = 'dwelling'
+      ..serviceStopId = 0
+      ..serviceBoardingOpen = true
+      ..dwellRemaining = 30
+      ..springHoldStartTime = 10
+      ..springHoldEndTime = 30
+      ..totalDwell = 30;
+    sim
+      ..time = 5
+      ..totalDwell = 30
+      ..totalSpringHoldSec = 20
+      ..maxSpringHoldSec = 20;
+    sim.stops[0]
+      ..occupiedByBusId = bus.id
+      ..serviceEndTime = 30
+      ..totalOccupiedSec = 30;
+    sim.springHoldLog.add({'busId': bus.id, 'stop': 0, 'holdSec': 20});
+    sim.waiting[0].add(Passenger(id: 1, origin: 0, dest: 1, arrivalTime: 5));
+
+    sim.boardDuringDwell(bus, 15);
+
+    expect(bus.onboard.length, 1);
+    expect(bus.springHoldEndTime, 15);
+    expect(bus.dwellRemaining, 0);
+    expect(sim.totalSpringHoldSec, 5);
+    expect(sim.springHoldLog.single['holdSec'], 5);
+    expect(sim.springHoldLog.single['cancelledByFull'], isTrue);
   });
 
   test('adjusted total penalizes incomplete passengers', () {

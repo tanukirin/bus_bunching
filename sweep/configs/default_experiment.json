@@ -34,7 +34,7 @@
   },
   "seeds": {
     "base": 238592,
-    "count": 4000,
+    "count": 400,
     "step": 101
   },
   "sweep": [
