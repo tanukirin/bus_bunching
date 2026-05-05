@@ -11,28 +11,82 @@ const noiseMeanFactor =
 double clampDouble(num value, num min, num max) =>
     math.max(min.toDouble(), math.min(max.toDouble(), value.toDouble()));
 
-double mean(List<num> values) => values.isEmpty
-    ? 0
-    : values.fold<double>(0, (sum, value) => sum + value.toDouble()) /
-          values.length;
+double mean(List<num> values) {
+  if (values.isEmpty) return 0;
+  var sum = 0.0;
+  for (final value in values) {
+    sum += value.toDouble();
+  }
+  return sum / values.length;
+}
 
 double std(List<num> values) {
   if (values.length < 2) return 0;
-  final m = mean(values);
-  return math.sqrt(
-    mean(values.map((value) => math.pow(value.toDouble() - m, 2)).toList()),
-  );
+  var sum = 0.0;
+  var sq = 0.0;
+  for (final value in values) {
+    final v = value.toDouble();
+    sum += v;
+    sq += v * v;
+  }
+  final m = sum / values.length;
+  return math.sqrt(math.max(0, sq / values.length - m * m));
 }
 
 double percentile(List<num> values, double p) {
   if (values.isEmpty) return 0;
-  final ordered = values.map((e) => e.toDouble()).toList()..sort();
+  final ordered = values.map((e) => e.toDouble()).toList();
   final idx = clampDouble(
     (p / 100 * ordered.length).ceil() - 1,
     0,
     ordered.length - 1,
   ).toInt();
-  return ordered[idx];
+  return _selectKth(ordered, idx);
+}
+
+double _selectKth(List<double> values, int k) {
+  var left = 0;
+  var right = values.length - 1;
+  while (true) {
+    if (left == right) return values[left];
+    final pivot = values[(left + right) >> 1];
+    final range = _partitionAround(values, left, right, pivot);
+    if (k < range.$1) {
+      right = range.$1 - 1;
+    } else if (k > range.$2) {
+      left = range.$2 + 1;
+    } else {
+      return values[k];
+    }
+  }
+}
+
+(int, int) _partitionAround(
+  List<double> values,
+  int left,
+  int right,
+  double pivot,
+) {
+  var lt = left;
+  var i = left;
+  var gt = right;
+  while (i <= gt) {
+    if (values[i] < pivot) {
+      _swap(values, lt++, i++);
+    } else if (values[i] > pivot) {
+      _swap(values, i, gt--);
+    } else {
+      i++;
+    }
+  }
+  return (lt, gt);
+}
+
+void _swap(List<double> values, int a, int b) {
+  if (a == b) return;
+  final tmp = values[a];
+  values[a] = values[b];
+  values[b] = tmp;
 }
 
 double positiveModulo(num value, num length) =>

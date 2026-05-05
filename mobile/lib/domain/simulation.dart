@@ -78,6 +78,54 @@ class Passenger {
   int? lastFullDeniedBusId;
 }
 
+class PassengerQueue extends Iterable<Passenger> {
+  final _items = <Passenger>[];
+  int _head = 0;
+
+  void add(Passenger passenger) {
+    _items.add(passenger);
+  }
+
+  @override
+  Passenger get first => _items[_head];
+  @override
+  int get length => _items.length - _head;
+  @override
+  bool get isEmpty => length == 0;
+  @override
+  bool get isNotEmpty => !isEmpty;
+
+  Passenger removeFirst() {
+    final passenger = _items[_head++];
+    if (_head > 32 && _head * 2 > _items.length) {
+      _items.removeRange(0, _head);
+      _head = 0;
+    }
+    return passenger;
+  }
+
+  @override
+  Iterator<Passenger> get iterator => _PassengerQueueIterator(_items, _head);
+}
+
+class _PassengerQueueIterator implements Iterator<Passenger> {
+  _PassengerQueueIterator(this._items, this._start) : _index = _start - 1;
+
+  final List<Passenger> _items;
+  final int _start;
+  int _index;
+
+  @override
+  Passenger get current => _items[_index];
+
+  @override
+  bool moveNext() {
+    if (_index < _start - 1) _index = _start - 1;
+    _index++;
+    return _index < _items.length;
+  }
+}
+
 class StopState {
   StopState(this.id);
 
@@ -230,7 +278,10 @@ class SimulationEngine {
   }) {
     controlEnabled = mode != 'plain';
     springEnabled = mode == 'spring';
-    waiting = List<List<Passenger>>.generate(config.stopCount, (_) => []);
+    waiting = List<PassengerQueue>.generate(
+      config.stopCount,
+      (_) => PassengerQueue(),
+    );
     stops = List<StopState>.generate(config.stopCount, StopState.new);
     buses = _createBuses();
   }
@@ -243,7 +294,7 @@ class SimulationEngine {
 
   late final bool controlEnabled;
   late final bool springEnabled;
-  late final List<List<Passenger>> waiting;
+  late final List<PassengerQueue> waiting;
   late final List<StopState> stops;
   late final List<BusState> buses;
   int eventIndex = 0;
@@ -266,6 +317,12 @@ class SimulationEngine {
   double totalSpringHoldSec = 0;
   double maxSpringHoldSec = 0;
   int springControlSkipAssistEvents = 0;
+  double springPositiveSignalSum = 0;
+  int springPositiveSignalCount = 0;
+  double springNegativeSignalSum = 0;
+  int springNegativeSignalCount = 0;
+  double springSignalAbsSum = 0;
+  int springSignalCount = 0;
   double totalBlockedDelaySec = 0;
   int blockEvents = 0;
   double maxBlockedSec = 0;
@@ -453,10 +510,11 @@ class SimulationEngine {
 
   double maxRoutePosBeforeLeader(BusState bus) {
     const epsilon = 0.012;
-    final ordered = [...buses]..sort((a, b) => a.id.compareTo(b.id));
-    final index = ordered.indexWhere((item) => item.id == bus.id);
+    final index = bus.id > 0 && bus.id <= buses.length
+        ? bus.id - 1
+        : buses.indexWhere((item) => item.id == bus.id);
     if (index < 0) return double.infinity;
-    final leader = index == 0 ? ordered.last : ordered[index - 1];
+    final leader = index == 0 ? buses.last : buses[index - 1];
     final leaderRoutePos = index == 0
         ? leader.routePos + config.stopCount
         : leader.routePos;
@@ -531,7 +589,7 @@ class SimulationEngine {
       final capacityLeft = config.capacity - bus.onboard.length;
       final boardCount = clampDouble(capacityLeft, 0, queue.length).toInt();
       for (var i = 0; i < boardCount; i++) {
-        final passenger = queue.removeAt(0);
+        final passenger = queue.removeFirst();
         passenger.boardTime = time;
         bus.onboard.add(passenger);
         boarded++;
@@ -611,7 +669,7 @@ class SimulationEngine {
     while (queue.isNotEmpty &&
         bus.onboard.length < config.capacity &&
         queue.first.arrivalTime <= currentTime + 1e-9) {
-      final passenger = queue.removeAt(0);
+      final passenger = queue.removeFirst();
       passenger.boardTime = math.max(passenger.arrivalTime, time);
       bus.onboard.add(passenger);
       boarded++;
@@ -825,6 +883,19 @@ class SimulationEngine {
     };
   }
 
+  void recordSpringSignal(double value) {
+    if (!value.isFinite) return;
+    springSignalCount++;
+    springSignalAbsSum += value.abs();
+    if (value > 0) {
+      springPositiveSignalCount++;
+      springPositiveSignalSum += value;
+    } else if (value < 0) {
+      springNegativeSignalCount++;
+      springNegativeSignalSum += value;
+    }
+  }
+
   Map<String, dynamic> springDecision(
     BusState bus,
     int stop, [
@@ -836,6 +907,7 @@ class SimulationEngine {
     final hBack = ctx['hBack'] as double;
     final h = ctx['idealHeadwayStops'] as double;
     bus.lastSpringSignal = springSignal;
+    recordSpringSignal(springSignal);
     springSignalLog.add({'time': time, 'busId': bus.id, 'stop': stop, ...ctx});
     final deadband = config.springDeadbandStops;
     final holdCandidate = springSignal < -deadband && hFront < h && hBack > h;
@@ -1054,9 +1126,111 @@ class SimulationEngine {
     );
   }
 
+  Map<String, dynamic> computeHistoryMetrics() {
+    final waits = completed
+        .where((p) => p.boardTime != null)
+        .map((p) => (p.boardTime! - p.arrivalTime) / 60)
+        .toList();
+    final recentStart = math.max(0, time - config.waitWindowSec);
+    final recentWaits = allPassengers.values
+        .where(
+          (p) =>
+              p.boardTime != null &&
+              p.boardTime! > recentStart &&
+              p.boardTime! <= time,
+        )
+        .map((p) => (p.boardTime! - p.arrivalTime) / 60)
+        .toList();
+    final totals = completed
+        .where((p) => p.alightTime != null)
+        .map((p) => (p.alightTime! - p.arrivalTime) / 60)
+        .toList();
+    final adjusted = adjustedTotalTimesMin();
+    final controlSkipped = allPassengers.values
+        .where((p) => p.skipCount > 0)
+        .toList();
+    final controlSkipExtra = controlSkipped
+        .where((p) => p.boardTime != null && p.firstSkipTime != null)
+        .map((p) => (p.boardTime! - p.firstSkipTime!) / 60)
+        .toList();
+    final denied = allPassengers.values
+        .where((p) => p.firstDeniedTime != null)
+        .toList();
+    final deniedExtra = denied
+        .where((p) => p.boardTime != null && p.firstDeniedTime != null)
+        .map((p) => (p.boardTime! - p.firstDeniedTime!) / 60)
+        .toList();
+    final hws = headways();
+    final ideal = config.stopCount / config.busCount;
+    final minHw = hws.reduce(math.min);
+    final maxHw = hws.reduce(math.max);
+    final hwsMean = mean(hws);
+    final cv = hwsMean == 0 ? 0.0 : std(hws) / hwsMean;
+    var errorSum = 0.0;
+    var closePairs = 0;
+    var closeSeveritySum = 0.0;
+    for (final h in hws) {
+      final error = h - ideal;
+      errorSum += error * error;
+      if (h <= 1) closePairs++;
+      closeSeveritySum += clampDouble(
+        (ideal * 0.55 - h) / (ideal * 0.55),
+        0,
+        1,
+      );
+    }
+    final closeSeverity = hws.isEmpty ? 0.0 : closeSeveritySum / hws.length;
+    final bunchScore = clampDouble(
+      clampDouble(cv / 1.35, 0, 1) * 45 +
+          clampDouble((0.65 - minHw / math.max(0.01, ideal)) / 0.65, 0, 1) *
+              35 +
+          closeSeverity * 20,
+      0,
+      100,
+    );
+    final springHoldEvents = springHoldLog.length;
+    return {
+      'timeMin': time / 60,
+      'bunchScore': bunchScore,
+      'avgWaitMin': mean(waits),
+      'top5WaitMin': percentile(waits, 95),
+      'avgTotalMin': mean(totals),
+      'top5TotalMin': percentile(totals, 95),
+      'adjustedAvgTotalMin': mean(adjusted.values),
+      'adjustedTop5TotalMin': percentile(adjusted.values, 95),
+      'recentAvgWaitMin': recentWaits.isEmpty ? double.nan : mean(recentWaits),
+      'recentTop5WaitMin': recentWaits.isEmpty
+          ? double.nan
+          : percentile(recentWaits, 95),
+      'recentBoardedPassengers': recentWaits.length,
+      'idealHeadwayStops': ideal,
+      'minHeadwayStops': minHw,
+      'maxHeadwayStops': maxHw,
+      'headwayRmseStops': math.sqrt(errorSum / math.max(1, hws.length)),
+      'closePairs': closePairs,
+      'deniedPassengers': denied.length,
+      'deniedAvgExtraMin': mean(deniedExtra),
+      'deniedMaxExtraMin': deniedExtra.isEmpty
+          ? 0.0
+          : deniedExtra.reduce(math.max),
+      'controlSkipAvgExtraMin': mean(controlSkipExtra),
+      'controlSkipMaxExtraMin': controlSkipExtra.isEmpty
+          ? 0.0
+          : controlSkipExtra.reduce(math.max),
+      'totalSpringHoldMin': totalSpringHoldSec / 60,
+      'springInterventionCount':
+          springHoldEvents + springControlSkipAssistEvents,
+      'totalBlockedDelayMin': totalBlockedDelaySec / 60,
+      'activeBlockedBuses': buses
+          .where((bus) => bus.status == 'blocked')
+          .length,
+      'blockedDuringBunchMin': blockedDuringBunchSec / 60,
+    };
+  }
+
   void sample() {
     if (lastSampleTime == time && history.isNotEmpty) return;
-    final metrics = computeMetrics();
+    final metrics = computeHistoryMetrics();
     final deltaSec = lastSampleTime == null
         ? 0.0
         : math.max(0, time - lastSampleTime!);
@@ -1150,18 +1324,22 @@ class SimulationEngine {
     final ideal = config.stopCount / config.busCount;
     final minHw = hws.reduce(math.min);
     final maxHw = hws.reduce(math.max);
-    final cv = mean(hws) == 0 ? 0.0 : std(hws) / mean(hws);
-    final errors = hws.map((h) => h - ideal).toList();
-    final errorSum = errors.fold<double>(
-      0,
-      (sum, error) => sum + error * error,
-    );
-    final closePairs = hws.where((h) => h <= 1).length;
-    final closeSeverity = mean(
-      hws
-          .map((h) => clampDouble((ideal * 0.55 - h) / (ideal * 0.55), 0, 1))
-          .toList(),
-    );
+    final hwsMean = mean(hws);
+    final cv = hwsMean == 0 ? 0.0 : std(hws) / hwsMean;
+    var errorSum = 0.0;
+    var closePairs = 0;
+    var closeSeveritySum = 0.0;
+    for (final h in hws) {
+      final error = h - ideal;
+      errorSum += error * error;
+      if (h <= 1) closePairs++;
+      closeSeveritySum += clampDouble(
+        (ideal * 0.55 - h) / (ideal * 0.55),
+        0,
+        1,
+      );
+    }
+    final closeSeverity = hws.isEmpty ? 0.0 : closeSeveritySum / hws.length;
     final bunchScore = clampDouble(
       clampDouble(cv / 1.35, 0, 1) * 45 +
           clampDouble((0.65 - minHw / math.max(0.01, ideal)) / 0.65, 0, 1) *
@@ -1172,13 +1350,6 @@ class SimulationEngine {
     );
     final loads = buses.map((bus) => bus.onboard.length).toList();
     final delays = buses.map((bus) => bus.delaySec / 60).toList();
-    final signals = springSignalLog
-        .map((row) => (row['springSignal'] as num?)?.toDouble())
-        .whereType<double>()
-        .where((value) => value.isFinite)
-        .toList();
-    final positiveSignals = signals.where((value) => value > 0).toList();
-    final negativeSignals = signals.where((value) => value < 0).toList();
     final springHoldEvents = springHoldLog.length;
     return {
       'timeMin': time / 60,
@@ -1230,7 +1401,7 @@ class SimulationEngine {
       'minHeadwayStops': minHw,
       'maxHeadwayStops': maxHw,
       'headwayErrorSum': errorSum,
-      'headwayRmseStops': math.sqrt(errorSum / math.max(1, errors.length)),
+      'headwayRmseStops': math.sqrt(errorSum / math.max(1, hws.length)),
       'headwayCv': cv,
       'closePairs': closePairs,
       'bunchScore': bunchScore,
@@ -1253,15 +1424,15 @@ class SimulationEngine {
       'springControlSkipAssistEvents': springControlSkipAssistEvents,
       'springInterventionCount':
           springHoldEvents + springControlSkipAssistEvents,
-      'springPositiveSignalAvg': positiveSignals.isEmpty
+      'springPositiveSignalAvg': springPositiveSignalCount == 0
           ? 0.0
-          : mean(positiveSignals),
-      'springNegativeSignalAvg': negativeSignals.isEmpty
+          : springPositiveSignalSum / springPositiveSignalCount,
+      'springNegativeSignalAvg': springNegativeSignalCount == 0
           ? 0.0
-          : mean(negativeSignals),
-      'springSignalAbsAvg': signals.isEmpty
+          : springNegativeSignalSum / springNegativeSignalCount,
+      'springSignalAbsAvg': springSignalCount == 0
           ? 0.0
-          : mean(signals.map((value) => value.abs()).toList()),
+          : springSignalAbsSum / springSignalCount,
       'totalBlockedDelayMin': totalBlockedDelaySec / 60,
       'avgBlockedDelayPerBusMin':
           totalBlockedDelaySec / 60 / math.max(1, config.busCount),

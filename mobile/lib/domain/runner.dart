@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:isolate';
 import 'dart:math' as math;
 
@@ -154,13 +155,13 @@ class SeedAverageProgress {
 }
 
 class SeedAverageHandle {
-  SeedAverageHandle._(this._isolate, this.progress, this.done);
+  SeedAverageHandle._(this.progress, this.done, this._cancel);
 
-  final Isolate _isolate;
   final Stream<SeedAverageProgress> progress;
   final Future<SeedAverageResult> done;
+  final void Function() _cancel;
 
-  void cancel() => _isolate.kill(priority: Isolate.immediate);
+  void cancel() => _cancel();
 }
 
 class SeedAverageRunner {
@@ -174,16 +175,13 @@ class SeedAverageRunner {
     void Function(int completed, int total)? onProgress,
   }) {
     final seeds = seedSequence(base: baseSeed, count: count, step: step);
-    final accumulator = _SeedAverageAccumulator(includeHistory: includeHistory);
-    for (var i = 0; i < seeds.length; i++) {
-      final result = runThreeModes(
-        config.copyWith(seed: seeds[i]),
-        includeHistory: includeHistory,
-        engine: engine,
-      );
-      accumulator.add(result);
-      onProgress?.call(i + 1, seeds.length);
-    }
+    final accumulator = _runSeedChunkSync(
+      config: config,
+      seeds: seeds,
+      includeHistory: includeHistory,
+      engine: engine,
+      onProgress: onProgress,
+    );
     return accumulator.build(config.copyWith(seed: baseSeed), seeds);
   }
 
@@ -212,6 +210,38 @@ class SeedAverageRunner {
     int step = 101,
     bool includeHistory = true,
     String engine = 'fast',
+    int? maxWorkers,
+  }) async {
+    final seeds = seedSequence(base: baseSeed, count: count, step: step);
+    final workerCount = _seedAverageWorkerCount(
+      seedCount: seeds.length,
+      maxWorkers: maxWorkers,
+    );
+    if (workerCount <= 1) {
+      return _startSingleWorker(
+        config: config,
+        baseSeed: baseSeed,
+        seeds: seeds,
+        includeHistory: includeHistory,
+        engine: engine,
+      );
+    }
+    return _startParallelWorkers(
+      config: config,
+      baseSeed: baseSeed,
+      seeds: seeds,
+      includeHistory: includeHistory,
+      engine: engine,
+      workerCount: workerCount,
+    );
+  }
+
+  static Future<SeedAverageHandle> _startSingleWorker({
+    required SimulationConfig config,
+    required int baseSeed,
+    required List<int> seeds,
+    required bool includeHistory,
+    required String engine,
   }) async {
     final receive = ReceivePort();
     final progressController =
@@ -221,11 +251,18 @@ class SeedAverageRunner {
       'sendPort': receive.sendPort,
       'config': config.toJson(),
       'baseSeed': baseSeed,
-      'count': count,
-      'step': step,
+      'seeds': seeds,
       'includeHistory': includeHistory,
       'engine': engine,
     });
+    var closed = false;
+    void close() {
+      if (closed) return;
+      closed = true;
+      progressController.close();
+      receive.close();
+    }
+
     receive.listen((message) {
       if (message is Map && message['type'] == 'progress') {
         progressController.add(
@@ -236,15 +273,105 @@ class SeedAverageRunner {
         );
       } else if (message is Map && message['type'] == 'done') {
         done.complete(_seedAverageResultFromMessage(message['result'] as Map));
-        progressController.close();
-        receive.close();
+        close();
       } else if (message is Map && message['type'] == 'error') {
         done.completeError(message['message'] ?? 'seed average failed');
-        progressController.close();
-        receive.close();
+        close();
       }
     });
-    return SeedAverageHandle._(isolate, progressController.stream, done.future);
+    return SeedAverageHandle._(progressController.stream, done.future, () {
+      isolate.kill(priority: Isolate.immediate);
+      if (!done.isCompleted) done.completeError('seed average cancelled');
+      close();
+    });
+  }
+
+  static Future<SeedAverageHandle> _startParallelWorkers({
+    required SimulationConfig config,
+    required int baseSeed,
+    required List<int> seeds,
+    required bool includeHistory,
+    required String engine,
+    required int workerCount,
+  }) async {
+    final receive = ReceivePort();
+    final progressController =
+        StreamController<SeedAverageProgress>.broadcast();
+    final done = Completer<SeedAverageResult>();
+    final chunks = _splitSeeds(seeds, workerCount);
+    final isolates = <Isolate>[];
+    final completedByWorker = List<int>.filled(chunks.length, 0);
+    final accumulator = _SeedAverageAccumulator(includeHistory: includeHistory);
+    var remainingWorkers = chunks.length;
+    var closed = false;
+
+    int completedTotal() =>
+        completedByWorker.fold<int>(0, (sum, value) => sum + value);
+
+    void close() {
+      if (closed) return;
+      closed = true;
+      progressController.close();
+      receive.close();
+    }
+
+    void fail(Object error) {
+      for (final isolate in isolates) {
+        isolate.kill(priority: Isolate.immediate);
+      }
+      if (!done.isCompleted) done.completeError(error);
+      close();
+    }
+
+    receive.listen((message) {
+      if (closed) return;
+      if (message is! Map) return;
+      final type = message['type'];
+      if (type == 'progress') {
+        final workerId = message['workerId'] as int;
+        completedByWorker[workerId] = message['completed'] as int;
+        progressController.add(
+          SeedAverageProgress(completed: completedTotal(), total: seeds.length),
+        );
+      } else if (type == 'chunkDone') {
+        final workerId = message['workerId'] as int;
+        completedByWorker[workerId] = chunks[workerId].length;
+        accumulator.mergeMessage(message['stats'] as Map);
+        remainingWorkers--;
+        progressController.add(
+          SeedAverageProgress(completed: completedTotal(), total: seeds.length),
+        );
+        if (remainingWorkers == 0) {
+          done.complete(
+            accumulator.build(config.copyWith(seed: baseSeed), seeds),
+          );
+          close();
+        }
+      } else if (type == 'error') {
+        fail(message['message'] ?? 'seed average failed');
+      }
+    });
+
+    try {
+      for (var workerId = 0; workerId < chunks.length; workerId++) {
+        isolates.add(
+          await Isolate.spawn(_seedAverageChunkIsolate, {
+            'sendPort': receive.sendPort,
+            'workerId': workerId,
+            'config': config.toJson(),
+            'seeds': chunks[workerId],
+            'includeHistory': includeHistory,
+            'engine': engine,
+          }),
+        );
+      }
+    } catch (error) {
+      fail(error);
+    }
+
+    return SeedAverageHandle._(progressController.stream, done.future, () {
+      fail('seed average cancelled');
+    });
   }
 }
 
@@ -254,11 +381,13 @@ void _seedAverageIsolate(Map<String, dynamic> message) {
     final config = normalizeConfig(
       Map<String, dynamic>.from(message['config'] as Map),
     );
-    final result = SeedAverageRunner.runSync(
+    final seeds = (message['seeds'] as Iterable)
+        .whereType<num>()
+        .map((value) => value.toInt())
+        .toList();
+    final accumulator = _runSeedChunkSync(
       config: config,
-      baseSeed: message['baseSeed'] as int,
-      count: message['count'] as int,
-      step: message['step'] as int,
+      seeds: seeds,
       includeHistory: message['includeHistory'] as bool,
       engine: message['engine'] as String,
       onProgress: (completed, total) {
@@ -271,10 +400,91 @@ void _seedAverageIsolate(Map<String, dynamic> message) {
         }
       },
     );
+    final result = accumulator.build(
+      config.copyWith(seed: message['baseSeed'] as int),
+      seeds,
+    );
     sendPort.send({'type': 'done', 'result': result.toJson()});
   } catch (error, stackTrace) {
     sendPort.send({'type': 'error', 'message': '$error\n$stackTrace'});
   }
+}
+
+void _seedAverageChunkIsolate(Map<String, dynamic> message) {
+  final sendPort = message['sendPort'] as SendPort;
+  final workerId = message['workerId'] as int;
+  try {
+    final config = normalizeConfig(
+      Map<String, dynamic>.from(message['config'] as Map),
+    );
+    final seeds = (message['seeds'] as Iterable)
+        .whereType<num>()
+        .map((value) => value.toInt())
+        .toList();
+    final accumulator = _runSeedChunkSync(
+      config: config,
+      seeds: seeds,
+      includeHistory: message['includeHistory'] as bool,
+      engine: message['engine'] as String,
+      onProgress: (completed, total) {
+        if (completed == total || completed % (total >= 1000 ? 10 : 3) == 0) {
+          sendPort.send({
+            'type': 'progress',
+            'workerId': workerId,
+            'completed': completed,
+            'total': total,
+          });
+        }
+      },
+    );
+    sendPort.send({
+      'type': 'chunkDone',
+      'workerId': workerId,
+      'stats': accumulator.toMessage(),
+    });
+  } catch (error, stackTrace) {
+    sendPort.send({
+      'type': 'error',
+      'workerId': workerId,
+      'message': '$error\n$stackTrace',
+    });
+  }
+}
+
+_SeedAverageAccumulator _runSeedChunkSync({
+  required SimulationConfig config,
+  required List<int> seeds,
+  required bool includeHistory,
+  required String engine,
+  void Function(int completed, int total)? onProgress,
+}) {
+  final accumulator = _SeedAverageAccumulator(includeHistory: includeHistory);
+  for (var i = 0; i < seeds.length; i++) {
+    final result = runThreeModes(
+      config.copyWith(seed: seeds[i]),
+      includeHistory: includeHistory,
+      engine: engine,
+    );
+    accumulator.add(result);
+    onProgress?.call(i + 1, seeds.length);
+  }
+  return accumulator;
+}
+
+int _seedAverageWorkerCount({required int seedCount, int? maxWorkers}) {
+  if (seedCount <= 1) return 1;
+  final cpuBound = math.max(1, Platform.numberOfProcessors - 1);
+  final configured = maxWorkers == null ? cpuBound : math.max(1, maxWorkers);
+  return math.min(seedCount, math.min(4, math.min(cpuBound, configured)));
+}
+
+List<List<int>> _splitSeeds(List<int> seeds, int workerCount) {
+  final chunks = <List<int>>[];
+  final size = (seeds.length / workerCount).ceil();
+  for (var start = 0; start < seeds.length; start += size) {
+    chunks.add(seeds.sublist(start, math.min(seeds.length, start + size)));
+  }
+  return chunks;
 }
 
 SeedAverageResult _seedAverageResultFromMessage(Map raw) {
@@ -341,6 +551,18 @@ class _MetricStats {
     final m = average;
     return math.sqrt(math.max(0, sq / n - m * m));
   }
+
+  Map<String, dynamic> toMessage() => {'n': n, 'sum': sum, 'sq': sq};
+
+  void mergeMessage(Map raw) {
+    final otherN = raw['n'];
+    final otherSum = raw['sum'];
+    final otherSq = raw['sq'];
+    if (otherN is! num || otherSum is! num || otherSq is! num) return;
+    n += otherN.toInt();
+    sum += otherSum.toDouble();
+    sq += otherSq.toDouble();
+  }
 }
 
 class _SeedAverageAccumulator {
@@ -371,6 +593,67 @@ class _SeedAverageAccumulator {
             rows[i].putIfAbsent(entry.key, _MetricStats.new).add(value);
           }
         }
+      }
+    }
+  }
+
+  Map<String, dynamic> toMessage() => {
+    'metrics': {
+      for (final mode in modeKeys)
+        mode: {
+          for (final entry in metrics[mode]!.entries)
+            entry.key: entry.value.toMessage(),
+        },
+    },
+    'histories': {
+      for (final mode in modeKeys)
+        mode: [
+          for (final row in histories[mode]!)
+            {
+              for (final entry in row.entries)
+                entry.key: entry.value.toMessage(),
+            },
+        ],
+    },
+  };
+
+  void mergeMessage(Map raw) {
+    final rawMetrics = Map<String, dynamic>.from(
+      (raw['metrics'] ?? const {}) as Map,
+    );
+    for (final mode in modeKeys) {
+      final rawModeMetrics = Map<String, dynamic>.from(
+        (rawMetrics[mode] ?? const {}) as Map,
+      );
+      for (final entry in rawModeMetrics.entries) {
+        final rawStats = entry.value;
+        if (rawStats is Map) {
+          metrics[mode]!
+              .putIfAbsent(entry.key, _MetricStats.new)
+              .mergeMessage(rawStats);
+        }
+      }
+    }
+    if (!includeHistory) return;
+    final rawHistories = Map<String, dynamic>.from(
+      (raw['histories'] ?? const {}) as Map,
+    );
+    for (final mode in modeKeys) {
+      final rawRows = (rawHistories[mode] ?? const []) as Iterable;
+      final rows = histories[mode]!;
+      var i = 0;
+      for (final rawRow in rawRows) {
+        if (rawRow is! Map) continue;
+        if (rows.length <= i) rows.add({});
+        for (final entry in Map<String, dynamic>.from(rawRow).entries) {
+          final rawStats = entry.value;
+          if (rawStats is Map) {
+            rows[i]
+                .putIfAbsent(entry.key, _MetricStats.new)
+                .mergeMessage(rawStats);
+          }
+        }
+        i++;
       }
     }
   }

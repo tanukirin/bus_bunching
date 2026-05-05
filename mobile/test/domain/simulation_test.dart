@@ -296,6 +296,102 @@ void main() {
     expect(result.histories['plain'], isEmpty);
   });
 
+  test(
+    'seed average start defaults to history and matches parallel result',
+    () async {
+      final config = presets['urban']!.copyWith(durationMin: 2);
+      final expected = SeedAverageRunner.runSync(
+        config: config,
+        baseSeed: 100,
+        count: 4,
+        includeHistory: true,
+        engine: 'fast',
+      );
+      final handle = await SeedAverageRunner.start(
+        config: config,
+        baseSeed: 100,
+        count: 4,
+        maxWorkers: 2,
+        engine: 'fast',
+      );
+      final result = await handle.done;
+
+      expect(result.seeds, expected.seeds);
+      expect(result.histories['plain'], isNotEmpty);
+      for (final mode in modeKeys) {
+        _expectMetricMapsClose(result.results[mode]!, expected.results[mode]!);
+        _expectMetricMapsClose(result.sd[mode]!, expected.sd[mode]!);
+        expect(
+          result.histories[mode]!.length,
+          expected.histories[mode]!.length,
+        );
+        for (var i = 0; i < result.histories[mode]!.length; i++) {
+          _expectMetricMapsClose(
+            result.histories[mode]![i],
+            expected.histories[mode]![i],
+          );
+        }
+      }
+    },
+  );
+
+  test('seed average cancel stops workers without completing result', () async {
+    final handle = await SeedAverageRunner.start(
+      config: presets['urban']!.copyWith(durationMin: 20),
+      baseSeed: 100,
+      count: 100,
+      maxWorkers: 2,
+      engine: 'fast',
+    );
+
+    handle.cancel();
+
+    await expectLater(handle.done, throwsA(anything));
+  });
+
+  test('history metrics match full metrics for chart keys', () {
+    final config = presets['urban']!.copyWith(seed: 123, durationMin: 4);
+    final events = EventGenerator.demandEvents(config);
+    final sim = SimulationEngine(
+      config,
+      'spring',
+      events,
+      includeHistory: false,
+      engine: 'fast',
+    );
+    sim.runToEnd();
+
+    final history = sim.computeHistoryMetrics();
+    final full = sim.computeMetrics();
+    for (final key in [
+      'bunchScore',
+      'avgWaitMin',
+      'top5WaitMin',
+      'avgTotalMin',
+      'top5TotalMin',
+      'adjustedAvgTotalMin',
+      'adjustedTop5TotalMin',
+      'recentAvgWaitMin',
+      'recentTop5WaitMin',
+      'recentBoardedPassengers',
+      'minHeadwayStops',
+      'maxHeadwayStops',
+      'headwayRmseStops',
+      'deniedPassengers',
+      'deniedAvgExtraMin',
+      'deniedMaxExtraMin',
+      'controlSkipAvgExtraMin',
+      'controlSkipMaxExtraMin',
+      'totalSpringHoldMin',
+      'springInterventionCount',
+      'totalBlockedDelayMin',
+      'activeBlockedBuses',
+      'blockedDuringBunchMin',
+    ]) {
+      _expectValuesClose(history[key], full[key], reason: key);
+    }
+  });
+
   test('seed average JSON import does not map legacy p95 aliases', () {
     final json = '''
 {
@@ -334,4 +430,28 @@ void main() {
     expect(a.next(), inInclusiveRange(0, 1));
     expect(math.max(0, a.poisson(0)), isA<int>());
   });
+}
+
+void _expectMetricMapsClose(
+  Map<String, dynamic> actual,
+  Map<String, dynamic> expected,
+) {
+  expect(actual.keys.toSet(), expected.keys.toSet());
+  for (final key in expected.keys) {
+    _expectValuesClose(actual[key], expected[key], reason: key);
+  }
+}
+
+void _expectValuesClose(Object? actual, Object? expected, {String? reason}) {
+  if (expected is num && actual is num) {
+    final expectedDouble = expected.toDouble();
+    final actualDouble = actual.toDouble();
+    if (expectedDouble.isNaN) {
+      expect(actualDouble.isNaN, isTrue, reason: reason);
+    } else {
+      expect(actualDouble, closeTo(expectedDouble, 1e-9), reason: reason);
+    }
+  } else {
+    expect(actual, expected, reason: reason);
+  }
 }
