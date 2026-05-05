@@ -633,15 +633,13 @@ class Simulation:
             )
             if hold_sec >= self.config["springMinHoldSec"]:
                 return {"skip": False, "holdSec": hold_sec, "reason": f"spring hold signal={ctx['springSignal']:.2f}", **ctx}
-        skip_candidate = ctx["springSignal"] > max(deadband, 0.5) and ctx["hFront"] > h and ctx["hBack"] < h
+        skip_candidate = ctx["springSignal"] > deadband and ctx["hFront"] > h and ctx["hBack"] < h
         if not skip_candidate:
             return {"skip": False, "holdSec": 0, "reason": f"spring neutral signal={ctx['springSignal']:.2f}"}
         base_decision = self.distance_skip_decision(bus, stop, alighting_count, True)
         if not base_decision.get("skip"):
             base_decision["assist"] = False
             return base_decision
-        if not self.spring_skip_improves_headway(bus, stop, alighting_count):
-            return {"skip": False, "holdSec": 0, "reason": "spring headway cost"}
         return {**base_decision, "assist": True, "reason": f"{base_decision['reason']} spring={ctx['springSignal']:.2f}", **ctx}
 
     def headway_context(self, bus: Bus) -> dict[str, float | int | None]:
@@ -658,21 +656,6 @@ class Simulation:
             "idealHeadwayStops": ideal,
             "springSignal": h_front - h_back,
         }
-
-    def spring_skip_improves_headway(self, bus: Bus, stop: int, alighting_count: int) -> bool:
-        capacity_left = max(0, self.config["capacity"] - len(bus.onboard))
-        boarded_if_normal = min(capacity_left, len(self.waiting[stop]))
-        saved_dwell = self.calculate_dwell_time(bus, boarded_if_normal, alighting_count, False)
-        forward_stops = clamp(saved_dwell / max(1, self.config["baseTravelSec"]), 0, self.config["stopCount"] / 2)
-        if forward_stops <= 0:
-            return True
-        return self.headway_error_cost(bus.id, forward_stops) < self.headway_error_cost()
-
-    def headway_error_cost(self, bus_id: int | None = None, forward_stops: float = 0) -> float:
-        ideal = self.config["stopCount"] / self.config["busCount"]
-        positions = sorted(positive_modulo(b.pos + (forward_stops if b.id == bus_id else 0), self.config["stopCount"]) for b in self.buses)
-        gaps = [(positions[(i + 1) % len(positions)] - positions[i] + self.config["stopCount"]) % self.config["stopCount"] for i in range(len(positions))]
-        return sum((h - ideal) ** 2 for h in gaps)
 
     def find_follower(self, bus: Bus) -> Bus | None:
         best = None

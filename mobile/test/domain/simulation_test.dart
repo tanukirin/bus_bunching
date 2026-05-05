@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:bus_bunching_mobile/domain/config.dart';
+import 'package:bus_bunching_mobile/domain/exporters.dart';
 import 'package:bus_bunching_mobile/domain/runner.dart';
 import 'package:bus_bunching_mobile/domain/simulation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -86,6 +87,28 @@ void main() {
     );
   });
 
+  test('comparison runner seek rebuilds deterministic state', () {
+    final config = presets['urban']!.copyWith(seed: 456, durationMin: 20);
+    final stepped = ComparisonRunner(config)..step(600);
+    final sought = ComparisonRunner(config)..seekTo(600);
+    expect(sought.time, stepped.time);
+    for (final mode in modeKeys) {
+      final a = stepped.sims[mode]!.computeMetrics();
+      final b = sought.sims[mode]!.computeMetrics();
+      expect(b['completed'], a['completed'], reason: '$mode.completed');
+      expect(
+        (b['adjustedAvgTotalMin'] as num).toDouble(),
+        closeTo((a['adjustedAvgTotalMin'] as num).toDouble(), 1e-9),
+        reason: '$mode.adjustedAvgTotalMin',
+      );
+      expect(
+        (b['headwayRmseStops'] as num).toDouble(),
+        closeTo((a['headwayRmseStops'] as num).toDouble(), 1e-9),
+        reason: '$mode.headwayRmseStops',
+      );
+    }
+  });
+
   test('no overtaking and one berth are preserved during stepping', () {
     final runner = ComparisonRunner(presets['rush']!.copyWith(durationMin: 20));
     for (var i = 0; i < 100; i++) {
@@ -142,6 +165,35 @@ void main() {
     expect(result.results['plain']!['avgWaitMin'], isA<double>());
     expect(result.sd['spring']!['headwayRmseStops'], isA<double>());
     expect(result.histories['plain'], isEmpty);
+  });
+
+  test('seed average JSON import does not map legacy p95 aliases', () {
+    final json = '''
+{
+  "type": "bus-bunching-seed-average-results",
+  "version": 1,
+  "config": {
+    "name": "fixture",
+    "seed": 1,
+    "durationMin": 1,
+    "stopCount": 4,
+    "busCount": 2
+  },
+  "seedAverage": {
+    "seeds": [1],
+    "plain": {"metrics": {"p95WaitMin": 9}, "sd": {}, "history": [{"t": 0, "p95WaitMin": 9}]},
+    "skip": {"metrics": {}, "sd": {}, "history": []},
+    "spring": {"metrics": {}, "sd": {}, "history": []}
+  }
+}
+''';
+    final result = seedAverageFromJsonText(json);
+    expect(result.results['plain']!.containsKey('top5WaitMin'), isFalse);
+    expect(result.results['plain']!['p95WaitMin'], 9);
+    expect(
+      result.histories['plain']!.first.containsKey('top5WaitMin'),
+      isFalse,
+    );
   });
 
   test('RNG remains deterministic', () {

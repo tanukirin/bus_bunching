@@ -32,6 +32,14 @@ class ComparisonRunner {
   ComparisonRunner(SimulationConfig config)
     : config = config,
       events = EventGenerator.demandEvents(config) {
+    _resetSims();
+  }
+
+  final SimulationConfig config;
+  final List<DemandEvent> events;
+  late Map<String, SimulationEngine> sims;
+
+  void _resetSims() {
     sims = {
       'plain': SimulationEngine(config, 'plain', events),
       'skip': SimulationEngine(config, 'skip', events),
@@ -42,12 +50,14 @@ class ComparisonRunner {
     }
   }
 
-  final SimulationConfig config;
-  final List<DemandEvent> events;
-  late final Map<String, SimulationEngine> sims;
-
   double get time => sims['plain']!.time;
   bool get isComplete => time >= config.durationSec;
+
+  void seekTo(double seconds) {
+    final target = seconds.clamp(0, config.durationSec).toDouble();
+    _resetSims();
+    step(target);
+  }
 
   void step(double seconds) {
     final target = math.min(config.durationSec.toDouble(), time + seconds);
@@ -284,10 +294,8 @@ SeedAverageResult _seedAverageResultFromMessage(Map raw) {
     final modeSource = Map<String, dynamic>.from(
       (source[mode] ?? const {}) as Map,
     );
-    results[mode] = _normalizeMetricAliases(
-      Map<String, dynamic>.from(
-        (modeSource['metrics'] ?? source['${mode}Metrics'] ?? const {}) as Map,
-      ),
+    results[mode] = Map<String, dynamic>.from(
+      (modeSource['metrics'] ?? source['${mode}Metrics'] ?? const {}) as Map,
     );
     sd[mode] = Map<String, double>.fromEntries(
       Map<String, dynamic>.from(
@@ -300,9 +308,7 @@ SeedAverageResult _seedAverageResultFromMessage(Map raw) {
         ((modeSource['history'] ?? source['${mode}History'] ?? const [])
                 as Iterable)
             .whereType<Map>()
-            .map(
-              (row) => _normalizeMetricAliases(Map<String, dynamic>.from(row)),
-            )
+            .map((row) => Map<String, dynamic>.from(row))
             .toList();
   }
   if (seeds.isEmpty)
@@ -314,21 +320,6 @@ SeedAverageResult _seedAverageResultFromMessage(Map raw) {
     sd: sd,
     histories: histories,
   );
-}
-
-Map<String, dynamic> _normalizeMetricAliases(Map<String, dynamic> metrics) {
-  final aliases = {
-    'p95WaitMin': 'top5WaitMin',
-    'p95TotalMin': 'top5TotalMin',
-    'recentP95WaitMin': 'recentTop5WaitMin',
-    'adjustedP95TotalMin': 'adjustedTop5TotalMin',
-  };
-  for (final entry in aliases.entries) {
-    if (metrics.containsKey(entry.key) && !metrics.containsKey(entry.value)) {
-      metrics[entry.value] = metrics[entry.key];
-    }
-  }
-  return metrics;
 }
 
 class _MetricStats {

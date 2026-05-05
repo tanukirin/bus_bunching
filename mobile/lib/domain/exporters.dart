@@ -103,10 +103,8 @@ SeedAverageResult _seedAverageFromMap(Map<String, dynamic> payload) {
     final modeSource = Map<String, dynamic>.from(
       (source[mode] ?? const {}) as Map,
     );
-    results[mode] = _metricAliases(
-      Map<String, dynamic>.from(
-        (modeSource['metrics'] ?? source['${mode}Metrics'] ?? const {}) as Map,
-      ),
+    results[mode] = Map<String, dynamic>.from(
+      (modeSource['metrics'] ?? source['${mode}Metrics'] ?? const {}) as Map,
     );
     sd[mode] = Map<String, double>.fromEntries(
       Map<String, dynamic>.from(
@@ -119,7 +117,7 @@ SeedAverageResult _seedAverageFromMap(Map<String, dynamic> payload) {
         ((modeSource['history'] ?? source['${mode}History'] ?? const [])
                 as Iterable)
             .whereType<Map>()
-            .map((row) => _metricAliases(Map<String, dynamic>.from(row)))
+            .map((row) => Map<String, dynamic>.from(row))
             .toList();
   }
   return SeedAverageResult(
@@ -129,21 +127,6 @@ SeedAverageResult _seedAverageFromMap(Map<String, dynamic> payload) {
     sd: sd,
     histories: histories,
   );
-}
-
-Map<String, dynamic> _metricAliases(Map<String, dynamic> metrics) {
-  const aliases = {
-    'p95WaitMin': 'top5WaitMin',
-    'p95TotalMin': 'top5TotalMin',
-    'recentP95WaitMin': 'recentTop5WaitMin',
-    'adjustedP95TotalMin': 'adjustedTop5TotalMin',
-  };
-  for (final entry in aliases.entries) {
-    if (metrics.containsKey(entry.key) && !metrics.containsKey(entry.value)) {
-      metrics[entry.value] = metrics[entry.key];
-    }
-  }
-  return metrics;
 }
 
 String _csv(List<List<Object?>> rows) =>
