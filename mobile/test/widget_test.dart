@@ -17,27 +17,67 @@ void main() {
     expect(find.byType(Image), findsOneWidget);
     expect(tester.getSize(find.byType(AppBar)).height, kToolbarHeight);
     expect(find.text('分析'), findsWidgets);
-    expect(find.text('再生'), findsOneWidget);
+    expect(find.byTooltip('再生'), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+    expect(find.text(' ▶ '), findsNothing);
+    expect(find.text(' ↶ '), findsNothing);
+    expect(find.text(' ⇥ '), findsNothing);
+    expect(find.text('60x'), findsOneWidget);
     final panelRect = tester.getRect(find.byType(ControlPanel));
     final navigationRect = tester.getRect(find.byType(NavigationBar));
     expect(panelRect.bottom, lessThanOrEqualTo(navigationRect.top));
     expect(navigationRect.top - panelRect.bottom, lessThanOrEqualTo(8));
-    expect(find.byTooltip('10分戻す'), findsOneWidget);
+    final sliders = find.byType(Slider);
+    expect(sliders, findsNWidgets(2));
+    final speedRect = tester.getRect(sliders.first);
+    expect(speedRect.left, lessThan(panelRect.center.dx));
+    expect(
+      find.descendant(
+        of: find.byType(ControlPanel),
+        matching: find.byType(IconButton),
+      ),
+      findsNWidgets(3),
+    );
+    final rewindRect = tester.getRect(find.byTooltip('3分戻す'));
+    final playRect = tester.getRect(find.byTooltip('再生'));
+    final skipRect = tester.getRect(find.byTooltip('終了までスキップ'));
+    expect(rewindRect.left, greaterThan(panelRect.center.dx));
+    expect(playRect.center.dx, greaterThan(rewindRect.center.dx));
+    expect(playRect.center.dx, lessThan(skipRect.center.dx));
+    expect(
+      find.descendant(of: find.byType(ControlPanel), matching: find.text('指標')),
+      findsNothing,
+    );
+    expect(find.byTooltip('3分戻す'), findsOneWidget);
+    expect(find.byTooltip('10分戻す'), findsNothing);
+    expect(find.byTooltip('終了までスキップ'), findsOneWidget);
     expect(find.byTooltip('リセット'), findsNothing);
+    final timeRect = tester.getRect(find.text('00:00 / 120:00'));
+    expect(timeRect.bottom, greaterThan(panelRect.center.dy));
+    expect(timeRect.right, lessThanOrEqualTo(panelRect.right));
+    final progressRect = tester.getRect(sliders.last);
+    expect(progressRect.bottom, greaterThan(panelRect.center.dy));
+    expect(progressRect.right, lessThan(timeRect.left));
     expect(find.textContaining('seed '), findsNothing);
     expect(find.text('制御なし'), findsOneWidget);
     expect(find.text('保持'), findsNothing);
     expect(find.byTooltip('全指標を表示'), findsOneWidget);
-    await tester.tap(find.byTooltip('全指標を表示'));
+    expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(ScenarioCard), matching: find.text('指標')),
+      findsNothing,
+    );
+    await tester.tap(find.byTooltip('全指標を表示').first);
     await tester.pumpAndSettle();
     expect(find.text('保持'), findsWidgets);
     expect(find.byTooltip('全指標を隠す'), findsOneWidget);
-    await tester.tap(find.byTooltip('全指標を隠す'));
+    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
+    await tester.tap(find.byTooltip('全指標を隠す').first);
     await tester.pumpAndSettle();
     expect(find.text('保持'), findsNothing);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -900));
     await tester.pumpAndSettle();
-    expect(find.text('再生'), findsOneWidget);
+    expect(find.byTooltip('再生'), findsOneWidget);
     expect(find.text('スキップ制御'), findsWidgets);
   });
 
@@ -49,12 +89,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('プリセット'), findsOneWidget);
     expect(find.text('入力設定を反映'), findsNothing);
+    expect(find.byTooltip('全パラメータの説明'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextField, 'ランダムシード'));
+    await tester.pump();
     await tester.enterText(find.widgetWithText(TextField, 'ランダムシード'), '123456');
     await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('同じ値にすると、需要や遅れの乱数が同じになり、結果を再現できます。'), findsOneWidget);
     expect(find.text('123456'), findsOneWidget);
     await tester.tap(find.byTooltip('ランダムなシードに変更'));
     await tester.pumpAndSettle();
     expect(find.text('123456'), findsNothing);
+    await tester.tap(find.byTooltip('全パラメータの説明'));
+    await tester.pumpAndSettle();
+    expect(find.text('パラメータ説明'), findsOneWidget);
+    expect(find.text('スプリングゲイン'), findsOneWidget);
+    expect(find.text('車間の偏りを戻すために、停車時間へ反映する強さです。'), findsOneWidget);
+    await tester.tap(find.text('閉じる'));
+    await tester.pumpAndSettle();
+    expect(find.text('パラメータ説明'), findsNothing);
   });
 
   testWidgets('seed average tab exposes run controls', (tester) async {

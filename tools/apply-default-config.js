@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 
 const repoRoot = path.resolve(__dirname, "..");
-const defaultIndexPath = path.join(repoRoot, "index.html");
+const defaultIndexPath = path.join(repoRoot, "prototype", "index.html");
 
 const CONFIG_KEYS = [
   "name",
@@ -75,7 +75,7 @@ const INPUT_VALUE_MAP = {
 };
 
 function usage() {
-  console.error("Usage: node tools/apply-default-config.js <bus-bunching-config.json|bus-bunching-results.json> [index.html|spring/index.html]");
+  console.error("Usage: node tools/apply-default-config.js <bus-bunching-config.json|bus-bunching-results.json> [prototype/index.html|spring/index.html]");
   process.exit(1);
 }
 

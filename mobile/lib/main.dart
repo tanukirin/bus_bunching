@@ -97,7 +97,7 @@ class _SimulatorHomeState extends State<SimulatorHome> {
   bool _metricsExpanded = false;
   SummaryMetricDisplayMode _summaryMetricMode =
       SummaryMetricDisplayMode.percent;
-  double _speed = 18;
+  double _speed = 60;
   Timer? _timer;
   Timer? _settingsDebounce;
   String _presetKey = 'urban';
@@ -330,10 +330,15 @@ class _SimulatorHomeState extends State<SimulatorHome> {
     });
   }
 
-  void _rewind10Minutes() {
-    _timer?.cancel();
-    final target = math.max(0.0, _runner.time - 600);
+  void _rewind3Minutes() {
+    final target = math.max(0.0, _runner.time - 180);
     _runner.seekTo(target);
+    setState(() => _result = _runner.snapshot());
+  }
+
+  void _skipToEnd() {
+    _timer?.cancel();
+    _runner.seekTo(_result.config.durationSec.toDouble());
     setState(() {
       _running = false;
       _result = _runner.snapshot();
@@ -456,6 +461,8 @@ class _SimulatorHomeState extends State<SimulatorHome> {
         result: _result,
         runner: _runner,
         metricsExpanded: _metricsExpanded,
+        onToggleMetricsExpanded: () =>
+            setState(() => _metricsExpanded = !_metricsExpanded),
         summaryMetricMode: _summaryMetricMode,
         onToggleSummaryMetricMode: () => setState(
           () => _summaryMetricMode =
@@ -562,11 +569,17 @@ class _SimulatorHomeState extends State<SimulatorHome> {
                 time: _runner.time,
                 durationSec: _result.config.durationSec,
                 onToggleRun: _toggleRun,
-                onRewind: _rewind10Minutes,
+                onRewind: _rewind3Minutes,
+                onSkipToEnd: _skipToEnd,
+                onSeek: (value) {
+                  _timer?.cancel();
+                  _runner.seekTo(value);
+                  setState(() {
+                    _running = false;
+                    _result = _runner.snapshot();
+                  });
+                },
                 onSpeedChanged: (value) => setState(() => _speed = value),
-                metricsExpanded: _metricsExpanded,
-                onToggleMetricsExpanded: () =>
-                    setState(() => _metricsExpanded = !_metricsExpanded),
               ),
             ),
           NavigationBar(
@@ -607,6 +620,7 @@ class AnalysisPage extends StatelessWidget {
     required this.result,
     required this.runner,
     required this.metricsExpanded,
+    required this.onToggleMetricsExpanded,
     required this.summaryMetricMode,
     required this.onToggleSummaryMetricMode,
   });
@@ -614,6 +628,7 @@ class AnalysisPage extends StatelessWidget {
   final ComparisonResult result;
   final ComparisonRunner runner;
   final bool metricsExpanded;
+  final VoidCallback onToggleMetricsExpanded;
   final SummaryMetricDisplayMode summaryMetricMode;
   final VoidCallback onToggleSummaryMetricMode;
 
@@ -632,6 +647,8 @@ class AnalysisPage extends StatelessWidget {
                   result: result.results[mode]!,
                   baselineMetrics: result.plain.metrics,
                   metricsExpanded: metricsExpanded,
+                  showMetricsToggle: mode == modeKeys.first,
+                  onToggleMetricsExpanded: onToggleMetricsExpanded,
                 ),
                 const SizedBox(height: 6),
               ],
@@ -690,9 +707,9 @@ class ControlPanel extends StatelessWidget {
     required this.durationSec,
     required this.onToggleRun,
     required this.onRewind,
+    required this.onSkipToEnd,
+    required this.onSeek,
     required this.onSpeedChanged,
-    required this.metricsExpanded,
-    required this.onToggleMetricsExpanded,
   });
 
   final bool running;
@@ -701,9 +718,9 @@ class ControlPanel extends StatelessWidget {
   final int durationSec;
   final VoidCallback onToggleRun;
   final VoidCallback onRewind;
+  final VoidCallback onSkipToEnd;
+  final ValueChanged<double> onSeek;
   final ValueChanged<double> onSpeedChanged;
-  final bool metricsExpanded;
-  final VoidCallback onToggleMetricsExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -715,55 +732,20 @@ class ControlPanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                if (running)
-                  IconButton.filled(
-                    onPressed: onToggleRun,
-                    tooltip: '一時停止',
-                    icon: const Icon(Icons.pause),
-                  )
-                else
-                  FilledButton.icon(
-                    onPressed: onToggleRun,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('再生'),
-                  ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  onPressed: onRewind,
-                  tooltip: '10分戻す',
-                  icon: const Icon(Icons.fast_rewind),
-                ),
-                const SizedBox(width: 6),
-                Tooltip(
-                  message: metricsExpanded ? '全指標を隠す' : '全指標を表示',
-                  child: FilledButton.tonalIcon(
-                    onPressed: onToggleMetricsExpanded,
-                    icon: Icon(
-                      metricsExpanded
-                          ? Icons.table_rows
-                          : Icons.table_rows_outlined,
-                      size: 18,
+                const SizedBox(width: 16, child: Icon(Icons.speed, size: 17)),
+                SizedBox(
+                  width: 132,
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 4,
+                      trackShape: const RectangularSliderTrackShape(),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 7,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 12,
+                      ),
                     ),
-                    label: const Text('指標'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(0, 40),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${_timeText(time)} / ${_timeText(durationSec.toDouble())}',
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                const Icon(Icons.speed, size: 18),
-                Expanded(
-                  child: SizedBox(
-                    height: 32,
                     child: Slider(
                       value: speed,
                       min: 1,
@@ -775,8 +757,91 @@ class ControlPanel extends StatelessWidget {
                   ),
                 ),
                 SizedBox(
-                  width: 44,
-                  child: Text('${speed.round()}x', textAlign: TextAlign.end),
+                  width: 42,
+                  child: Text(
+                    '${speed.round()}x',
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.end,
+                  ),
+                ),
+                const Spacer(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Tooltip(
+                      message: '3分戻す',
+                      child: IconButton.filledTonal(
+                        onPressed: onRewind,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                          shape: const CircleBorder(),
+                        ),
+                        icon: const Icon(Icons.replay),
+                        iconSize: 25,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Tooltip(
+                      message: running ? '一時停止' : '再生',
+                      child: IconButton.filled(
+                        onPressed: onToggleRun,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(52, 52),
+                          shape: const CircleBorder(),
+                        ),
+                        icon: Icon(running ? Icons.pause : Icons.play_arrow),
+                        iconSize: 30,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Tooltip(
+                      message: '終了までスキップ',
+                      child: IconButton.filledTonal(
+                        onPressed: onSkipToEnd,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                          shape: const CircleBorder(),
+                        ),
+                        icon: const Icon(Icons.skip_next),
+                        iconSize: 26,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 6,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 7,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 14,
+                      ),
+                    ),
+                    child: Slider(
+                      value: time.clamp(0.0, durationSec.toDouble()),
+                      min: 0,
+                      max: durationSec.toDouble(),
+                      label: _timeText(time),
+                      onChanged: onSeek,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 116,
+                  child: Text(
+                    '${_timeText(time)} / ${_timeText(durationSec.toDouble())}',
+                    textAlign: TextAlign.end,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
               ],
             ),
@@ -1490,6 +1555,8 @@ class ScenarioCard extends StatelessWidget {
     required this.result,
     required this.baselineMetrics,
     required this.metricsExpanded,
+    required this.showMetricsToggle,
+    required this.onToggleMetricsExpanded,
   });
 
   final String mode;
@@ -1497,6 +1564,8 @@ class ScenarioCard extends StatelessWidget {
   final ModeResult result;
   final Map<String, dynamic> baselineMetrics;
   final bool metricsExpanded;
+  final bool showMetricsToggle;
+  final VoidCallback onToggleMetricsExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -1543,6 +1612,26 @@ class ScenarioCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ),
+                if (showMetricsToggle) ...[
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: metricsExpanded ? '全指標を隠す' : '全指標を表示',
+                    child: IconButton.filledTonal(
+                      onPressed: onToggleMetricsExpanded,
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(34, 34),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: Icon(
+                        metricsExpanded
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                      ),
+                      iconSize: 22,
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 2),
@@ -2296,95 +2385,210 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const groups = _settingsGroups;
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
       children: [
         Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Column(
+            child: Row(
               children: [
-                DropdownButtonFormField<String>(
-                  initialValue: presets.containsKey(presetKey)
-                      ? presetKey
-                      : 'custom',
-                  decoration: const InputDecoration(labelText: 'プリセット'),
-                  items: [
-                    if (!presets.containsKey(presetKey))
-                      const DropdownMenuItem(
-                        value: 'custom',
-                        child: Text('カスタム'),
-                      ),
-                    for (final entry in presets.entries)
-                      DropdownMenuItem(
-                        value: entry.key,
-                        child: Text(entry.value.name),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) onPresetChanged(value);
-                  },
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: presets.containsKey(presetKey)
+                        ? presetKey
+                        : 'custom',
+                    decoration: const InputDecoration(labelText: 'プリセット'),
+                    items: [
+                      if (!presets.containsKey(presetKey))
+                        const DropdownMenuItem(
+                          value: 'custom',
+                          child: Text('カスタム'),
+                        ),
+                      for (final entry in presets.entries)
+                        DropdownMenuItem(
+                          value: entry.key,
+                          child: Text(entry.value.name),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) onPresetChanged(value);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: () => _showParameterHelp(context, groups),
+                  tooltip: '全パラメータの説明',
+                  icon: const Icon(Icons.help_outline),
                 ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 12),
-        _SettingsSection(
-          title: '基本',
-          fields: [
-            _ConfigField('seed', 'ランダムシード'),
-            _ConfigField('durationMin', '時間 分'),
-            _ConfigField('stopCount', '停留所数'),
-            _ConfigField('busCount', 'バス台数'),
-            _ConfigField('demandMultiplier', '需要倍率'),
-            _ConfigField('capacity', '定員'),
-          ],
-          controllers: controllers,
-          onChanged: onSettingsChanged,
-          onRandomSeed: onRandomSeed,
-        ),
-        _SettingsSection(
-          title: '運行・需要',
-          fields: [
-            _ConfigField('baseSpeedKmh', '基本速度 km/h'),
-            _ConfigField('stopDistanceKm', '停留所間 km'),
-            _ConfigField('fixedStopSec', '固定停車秒'),
-            _ConfigField('boardTimeSec', '乗車 秒/人'),
-            _ConfigField('alightTimeSec', '降車 秒/人'),
-            _ConfigField('randomDelayMeanSec', '区間平均遅れ秒'),
-            _ConfigField('hotspotStops', '需要集中停留所'),
-            _ConfigField('hotspotMultiplier', '集中倍率'),
-          ],
-          controllers: controllers,
-          onChanged: onSettingsChanged,
-          onRandomSeed: onRandomSeed,
-        ),
-        _SettingsSection(
-          title: '制御',
-          fields: [
-            _ConfigField('distanceThresholdStops', '後続車間しきい値 停'),
-            _ConfigField('delayThresholdMin', '先行遅延しきい値 分'),
-            _ConfigField('followerLoadLimit', '後続混雑しきい値'),
-            _ConfigField('springGainSecPerStop', 'スプリングゲイン'),
-            _ConfigField('springDeadbandStops', '不感帯 停'),
-            _ConfigField('springDamping', '遅延減衰'),
-            _ConfigField('springMaxHoldSec', '最大保持秒'),
-            _ConfigField('springMinHoldSec', '最小保持秒'),
-          ],
-          controllers: controllers,
-          onChanged: onSettingsChanged,
-          onRandomSeed: onRandomSeed,
-        ),
+        for (final group in groups)
+          _SettingsSection(
+            title: group.title,
+            fields: group.fields,
+            controllers: controllers,
+            onChanged: onSettingsChanged,
+            onRandomSeed: onRandomSeed,
+          ),
       ],
     );
   }
 }
 
 class _ConfigField {
-  const _ConfigField(this.key, this.label);
+  const _ConfigField(this.key, this.label, this.description);
   final String key;
   final String label;
+  final String description;
+}
+
+class _SettingsGroup {
+  const _SettingsGroup(this.title, this.fields);
+  final String title;
+  final List<_ConfigField> fields;
+}
+
+const _settingsGroups = [
+  _SettingsGroup('基本', [
+    _ConfigField('seed', 'ランダムシード', '同じ値にすると、需要や遅れの乱数が同じになり、結果を再現できます。'),
+    _ConfigField(
+      'durationMin',
+      '時間 分',
+      'シミュレーションする時間です。長くすると終盤の混雑や団子化まで確認しやすくなります。',
+    ),
+    _ConfigField('stopCount', '停留所数', '路線上の停留所の数です。多いほどバスの間隔変化が細かく表れます。'),
+    _ConfigField('busCount', 'バス台数', '同じ路線を走るバスの台数です。台数が増えると車間の詰まりやすさが変わります。'),
+    _ConfigField(
+      'demandMultiplier',
+      '需要倍率',
+      '全体の乗客発生量に掛ける倍率です。大きいほど乗降に時間がかかり、遅れやすくなります。',
+    ),
+    _ConfigField('capacity', '定員', '1台に乗れる最大人数です。満員になると乗れない乗客や待ち時間が増えます。'),
+  ]),
+  _SettingsGroup('運行・需要', [
+    _ConfigField(
+      'baseSpeedKmh',
+      '基本速度 km/h',
+      '停留所間を走るときの基準速度です。値が低いほど全体の所要時間が長くなります。',
+    ),
+    _ConfigField('stopDistanceKm', '停留所間 km', '隣り合う停留所の距離です。速度と合わせて走行時間を決めます。'),
+    _ConfigField('fixedStopSec', '固定停車秒', '乗降人数に関係なく、各停留所で最低限かかる停車時間です。'),
+    _ConfigField('boardTimeSec', '乗車 秒/人', '1人が乗るのに必要な時間です。需要が多いほど影響が大きくなります。'),
+    _ConfigField(
+      'alightTimeSec',
+      '降車 秒/人',
+      '1人が降りるのに必要な時間です。降車が多い停留所ほど停車時間が伸びます。',
+    ),
+    _ConfigField(
+      'randomDelayMeanSec',
+      '区間平均遅れ秒',
+      '区間ごとに発生するランダムな遅れの平均です。交通状況のばらつきを表します。',
+    ),
+    _ConfigField(
+      'hotspotStops',
+      '需要集中停留所',
+      '乗客が集中する停留所番号をカンマ区切りで指定します。例: 3,7,12',
+    ),
+    _ConfigField(
+      'hotspotMultiplier',
+      '集中倍率',
+      '需要集中停留所の乗客発生量に掛ける倍率です。大きいほど特定停留所で混みやすくなります。',
+    ),
+  ]),
+  _SettingsGroup('制御', [
+    _ConfigField(
+      'distanceThresholdStops',
+      '後続車間しきい値 停',
+      '後続バスとの距離がこの値より近いと、前車待ちや補助の判断に使われます。',
+    ),
+    _ConfigField(
+      'delayThresholdMin',
+      '先行遅延しきい値 分',
+      '先行バスの遅れがこの値を超えると、制御が働きやすくなります。',
+    ),
+    _ConfigField(
+      'followerLoadLimit',
+      '後続混雑しきい値',
+      '後続バスの混雑度がこの値以下なら、補助や降車のみ扱いを許容しやすくなります。',
+    ),
+    _ConfigField(
+      'springGainSecPerStop',
+      'スプリングゲイン',
+      '車間の偏りを戻すために、停車時間へ反映する強さです。',
+    ),
+    _ConfigField(
+      'springDeadbandStops',
+      '不感帯 停',
+      '車間差がこの範囲内ならスプリング制御を弱め、細かな揺れを抑えます。',
+    ),
+    _ConfigField(
+      'springDamping',
+      '遅延減衰',
+      '遅れが大きいときに保持を抑える係数です。大きいほど遅延時の追加停車を避けます。',
+    ),
+    _ConfigField('springMaxHoldSec', '最大保持秒', 'スプリング制御で追加できる最大停車時間です。'),
+    _ConfigField('springMinHoldSec', '最小保持秒', 'スプリング制御が働くときに確保する最小停車時間です。'),
+  ]),
+];
+
+void _showParameterHelp(BuildContext context, List<_SettingsGroup> groups) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('パラメータ説明'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final group in groups) ...[
+                Text(
+                  group.title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                for (final field in group.fields)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          field.label,
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          field.description,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 6),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('閉じる'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _SettingsSection extends StatelessWidget {
@@ -2420,28 +2624,192 @@ class _SettingsSection extends StatelessWidget {
             for (final field in fields)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: TextField(
+                child: _ConfigTextField(
+                  field: field,
                   controller: controllers[field.key],
-                  onChanged: (_) => onChanged(),
-                  keyboardType: field.key == 'hotspotStops'
-                      ? TextInputType.text
-                      : const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: field.label,
-                    border: const OutlineInputBorder(),
-                    suffixIcon: field.key == 'seed'
-                        ? IconButton(
-                            onPressed: onRandomSeed,
-                            tooltip: 'ランダムなシードに変更',
-                            icon: const Icon(Icons.casino_outlined),
-                          )
-                        : null,
-                  ),
+                  onChanged: onChanged,
+                  onRandomSeed: onRandomSeed,
                 ),
               ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ConfigTextField extends StatefulWidget {
+  const _ConfigTextField({
+    required this.field,
+    required this.controller,
+    required this.onChanged,
+    required this.onRandomSeed,
+  });
+
+  final _ConfigField field;
+  final TextEditingController? controller;
+  final VoidCallback onChanged;
+  final VoidCallback onRandomSeed;
+
+  @override
+  State<_ConfigTextField> createState() => _ConfigTextFieldState();
+}
+
+class _ConfigTextFieldState extends State<_ConfigTextField> {
+  late final FocusNode _focusNode;
+  OverlayEntry? _helpOverlay;
+  final double _fallbackFieldWidth = 280;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(_handleFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChanged);
+    _hideHelpOverlay();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChanged() {
+    if (_focusNode.hasFocus) {
+      _showHelpOverlay();
+    } else {
+      _hideHelpOverlay();
+    }
+  }
+
+  void _showHelpOverlay() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_focusNode.hasFocus || _helpOverlay != null) return;
+      final box = context.findRenderObject() as RenderBox?;
+      final fieldOffset = box?.localToGlobal(Offset.zero) ?? Offset.zero;
+      final fieldSize = box?.size ?? Size(_fallbackFieldWidth, 0);
+      final screenWidth = MediaQuery.sizeOf(context).width;
+      const screenMargin = 12.0;
+      final bubbleWidth = screenWidth - screenMargin * 2;
+      final arrowLeft = (fieldOffset.dx + 32 - screenMargin)
+          .clamp(16.0, bubbleWidth - 22)
+          .toDouble();
+      final bubbleTop = fieldOffset.dy + fieldSize.height + 6;
+      _helpOverlay = OverlayEntry(
+        builder: (context) => Positioned(
+          left: screenMargin,
+          right: screenMargin,
+          top: bubbleTop,
+          child: IgnorePointer(
+            child: Material(
+              color: Colors.transparent,
+              child: _ParameterHelpBubble(
+                text: widget.field.description,
+                arrowLeft: arrowLeft,
+              ),
+            ),
+          ),
+        ),
+      );
+      Overlay.of(context).insert(_helpOverlay!);
+    });
+  }
+
+  void _hideHelpOverlay() {
+    _helpOverlay?.remove();
+    _helpOverlay = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final field = widget.field;
+    return TextField(
+      focusNode: _focusNode,
+      controller: widget.controller,
+      onChanged: (_) => widget.onChanged(),
+      keyboardType: field.key == 'hotspotStops'
+          ? TextInputType.text
+          : const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: field.label,
+        border: const OutlineInputBorder(),
+        suffixIcon: field.key == 'seed'
+            ? IconButton(
+                onPressed: widget.onRandomSeed,
+                tooltip: 'ランダムなシードに変更',
+                icon: const Icon(Icons.casino_outlined),
+              )
+            : null,
+      ),
+    );
+  }
+}
+
+class _ParameterHelpBubble extends StatelessWidget {
+  const _ParameterHelpBubble({required this.text, required this.arrowLeft});
+
+  final String text;
+  final double arrowLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          top: -5,
+          left: arrowLeft,
+          child: Transform.rotate(
+            angle: math.pi / 4,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                border: Border(
+                  top: BorderSide(color: scheme.outlineVariant),
+                  left: BorderSide(color: scheme.outlineVariant),
+                ),
+                borderRadius: BorderRadius.circular(2),
+              ),
+              child: const SizedBox(width: 10, height: 10),
+            ),
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer,
+            border: Border.all(color: scheme.outlineVariant),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 16, color: scheme.primary),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onPrimaryContainer,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

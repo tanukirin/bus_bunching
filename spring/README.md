@@ -6,12 +6,12 @@
 - `skip`: 距離基準スキップ制御
 - `spring`: スプリング法
 
-ルート直下の既存アプリを基準版として残し、このディレクトリでは3方式比較に特化しています。実行方法は `spring/index.html` をブラウザで開くだけです。
+`prototype/index.html` の既存アプリを基準版として残し、このディレクトリでは3方式比較に特化しています。実行方法は `spring/index.html` をブラウザで開くだけです。
 
 デフォルト値の更新ツールは第2引数で対象HTMLを指定すると、この3方式版にも使えます。
 
 ```powershell
-node tools/apply-default-config.js bus-bunching-config.json spring/index.html
+node tools/apply-default-config.js prototype/bus-bunching-config.json spring/index.html
 ```
 
 ## 3方式の違い

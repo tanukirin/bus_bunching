@@ -18,7 +18,7 @@
 Windowsでは次のファイルを直接開けます。
 
 ```text
-index.html
+prototype/index.html
 ```
 
 ## デフォルト設定の更新
@@ -26,7 +26,7 @@ index.html
 アプリ上部の `設定JSON` で出力したJSON、または結果JSONを使って、初期表示のデフォルト値を更新できます。
 
 ```powershell
-node tools/apply-default-config.js bus-bunching-config.json
+node tools/apply-default-config.js prototype/bus-bunching-config.json
 ```
 
 このコマンドは `index.html` の `高頻度都市路線` プリセットとフォームの初期値を、JSON内の `config` に合わせて更新します。出力ファイルは `.gitignore` 対象なので、必要な場合だけ別名で保管してください。
