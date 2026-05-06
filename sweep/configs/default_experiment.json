@@ -30,21 +30,24 @@
     "springDamping": 0,
     "springMaxHoldSec": 120,
     "springMinHoldSec": 5,
+    "springVoluntaryDeferralEnabled": false,
+    "springControlSkipEnabled": true,
+    "springHoldingEnabled": true,
     "forbidHoldingWhenFull": true
   },
   "seeds": {
     "base": 238592,
-    "count": 400,
+    "count": 4000,
     "step": 101
   },
   "sweep": [
     {
-      "param": "distanceThresholdStops",
-      "values": [0.1, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.5, 1.8, 2.1, 2.4, 3.0]
+      "param": "springVoluntaryDeferralEnabled",
+      "values": [true, false]
     },
     {
-      "param": "followerLoadLimit",
-      "values": [0.6, 0.7, 0.8, 0.9, 1.0]
+      "param": "springControlSkipEnabled",
+      "values": [true, false]
     }
   ],
   "modes": ["plain", "skip", "spring"],

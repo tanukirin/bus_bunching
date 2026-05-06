@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:bus_bunching_mobile/main.dart';
 import 'package:bus_bunching_mobile/domain/config.dart';
 import 'package:bus_bunching_mobile/domain/runner.dart';
+import 'package:bus_bunching_mobile/features/file_bridge.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart' hide ComparisonResult;
 
 void main() {
@@ -72,21 +74,16 @@ void main() {
     expect(progressRect.right, lessThan(timeRect.left));
     expect(find.textContaining('seed '), findsNothing);
     expect(find.text('制御なし'), findsOneWidget);
+    final bunchScoreLabels = find.text('団子度 0');
+    expect(bunchScoreLabels, findsNWidgets(3));
+    final bunchScoreLeft = tester.getTopLeft(bunchScoreLabels.at(0)).dx;
+    expect(tester.getTopLeft(bunchScoreLabels.at(1)).dx, bunchScoreLeft);
+    expect(tester.getTopLeft(bunchScoreLabels.at(2)).dx, bunchScoreLeft);
     expect(find.text('保持'), findsNothing);
-    expect(find.byTooltip('全指標を表示'), findsOneWidget);
-    expect(find.byIcon(Icons.keyboard_arrow_down), findsOneWidget);
     expect(
       find.descendant(of: find.byType(ScenarioCard), matching: find.text('指標')),
       findsNothing,
     );
-    await tester.tap(find.byTooltip('全指標を表示').first);
-    await tester.pumpAndSettle();
-    expect(find.text('保持'), findsWidgets);
-    expect(find.byTooltip('全指標を隠す'), findsOneWidget);
-    expect(find.byIcon(Icons.keyboard_arrow_up), findsOneWidget);
-    await tester.tap(find.byTooltip('全指標を隠す').first);
-    await tester.pumpAndSettle();
-    expect(find.text('保持'), findsNothing);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -900));
     await tester.pumpAndSettle();
     expect(find.byTooltip('再生'), findsOneWidget);
@@ -106,6 +103,7 @@ void main() {
     await tester.pump();
     await tester.enterText(find.widgetWithText(TextField, 'ランダムシード'), '123456');
     await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
     expect(find.text('同じ値にすると、需要や遅れの乱数が同じになり、結果を再現できます。'), findsOneWidget);
     expect(find.text('123456'), findsOneWidget);
     await tester.tap(find.byTooltip('ランダムなシードに変更'));
@@ -116,8 +114,11 @@ void main() {
     await tester.tap(find.byTooltip('全パラメータの説明'));
     await tester.pumpAndSettle();
     expect(find.text('パラメータ説明'), findsOneWidget);
-    expect(find.text('スプリングゲイン'), findsOneWidget);
-    expect(find.text('車間の偏りを戻すために、停車時間へ反映する強さです。'), findsOneWidget);
+    expect(find.text('保持: 車間補正ゲイン'), findsOneWidget);
+    expect(
+      find.text('保持制御用です。車間の偏り1停留所あたり、停車保持へ何秒反映するかを決めます。'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('閉じる'));
     await tester.pumpAndSettle();
     expect(find.text('パラメータ説明'), findsNothing);
@@ -269,6 +270,7 @@ void main() {
     expect(find.text('Sp -10%'), findsWidgets);
     await tester.tap(find.text('値'));
     await tester.pumpAndSettle();
+    expect(find.text('なし 10.0分'), findsWidgets);
     expect(find.text('S 9.0分'), findsWidgets);
     expect(find.text('Sp 11.0分'), findsWidgets);
     expect(find.text('S +10%'), findsNothing);
@@ -371,15 +373,124 @@ void main() {
     }
   });
 
-  testWidgets('import export tab exposes JSON copy and import actions', (
+  testWidgets('import export tab groups output and saved files', (
     tester,
   ) async {
+    const channel = MethodChannel('bus_bunching_mobile/files');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'listExports') return <Object?>[];
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
     await tester.pumpWidget(const BusBunchingApp());
     await tester.tap(find.text('入出力').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('出力'), findsOneWidget);
+    expect(find.text('保存名の主要部'), findsOneWidget);
+    expect(find.text('設定'), findsWidgets);
+    expect(find.text('シード平均結果'), findsOneWidget);
+    expect(find.text('比較結果'), findsNothing);
+    expect(find.text('指標表'), findsNothing);
+    expect(find.text('平均JSON'), findsNothing);
+    expect(find.text('JSON貼り付け'), findsNothing);
+    expect(find.text('JSONファイルを選択'), findsNothing);
+    await tester.tap(find.text('分析者用の出力を表示'));
     await tester.pumpAndSettle();
-    expect(find.text('設定JSONコピー'), findsOneWidget);
-    expect(find.text('結果JSONコピー'), findsOneWidget);
-    expect(find.text('JSON貼り付け'), findsOneWidget);
+    expect(find.text('比較結果'), findsOneWidget);
+    expect(find.text('指標表'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '保存名の主要部'), 'rush');
+    await tester.pump();
+    expect(find.text('rush-settings.json'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pump();
+    await tester.drag(find.byType(ListView), const Offset(0, -160));
+    await tester.pump();
+    expect(find.text('保存したファイル'), findsOneWidget);
+    expect(find.text('設定として読込'), findsNothing);
+    expect(find.text('まだこの端末で保存した設定やシード平均結果はありません'), findsOneWidget);
+  });
+
+  testWidgets('saved file history exposes import only for app JSON records', (
+    tester,
+  ) async {
+    final records = [
+      StoredExport(
+        id: 'config',
+        fileName: 'bus-bunching-config.json',
+        mimeType: 'application/json',
+        kind: FileExportKind.config,
+        savedAt: DateTime(2026, 5, 1, 12, 30),
+      ),
+      StoredExport(
+        id: 'seed-average',
+        fileName: 'bus-bunching-seed-average-results.json',
+        mimeType: 'application/json',
+        kind: FileExportKind.seedAverageJson,
+        savedAt: DateTime(2026, 5, 1, 12, 31),
+      ),
+      StoredExport(
+        id: 'results',
+        fileName: 'bus-bunching-results.json',
+        mimeType: 'application/json',
+        kind: FileExportKind.comparisonResults,
+        savedAt: DateTime(2026, 5, 1, 12, 32),
+      ),
+      StoredExport(
+        id: 'metrics',
+        fileName: 'bus-bunching-metrics.csv',
+        mimeType: 'text/csv',
+        kind: FileExportKind.metricsCsv,
+        savedAt: DateTime(2026, 5, 1, 12, 33),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: IoPage(
+            exportBaseNameController: TextEditingController(
+              text: 'bus-bunching',
+            ),
+            fileNameForKind: (kind) =>
+                'bus-bunching-${kind.fileSuffix}.${kind.extension}',
+            exports: records,
+            exportsLoaded: true,
+            onCopyConfig: () {},
+            onCopyResults: () {},
+            onCopyMetricsCsv: () {},
+            onCopySeedJson: () {},
+            onCopySeedCsv: () {},
+            onSaveConfig: () {},
+            onSaveResults: () {},
+            onSaveMetricsCsv: () {},
+            onSaveSeedJson: () {},
+            onSaveSeedCsv: () {},
+            onRefreshExports: () async {},
+            onDeleteExport: (_) async {},
+            onImportConfig: (_) async {},
+            onImportSeedAverage: (_) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+
     expect(find.text('設定として読込'), findsOneWidget);
+    expect(find.text('平均結果として読込'), findsOneWidget);
+    expect(find.text('bus-bunching-results.json'), findsNothing);
+    expect(find.byTooltip('ファイルを削除'), findsNWidgets(2));
+    await tester.tap(find.text('分析者用ファイルを表示'));
+    await tester.pumpAndSettle();
+    expect(find.text('bus-bunching-results.json'), findsWidgets);
+    expect(find.byTooltip('ファイルを削除'), findsNWidgets(4));
+    expect(find.text('JSON貼り付け'), findsNothing);
+    expect(find.text('JSONファイルを選択'), findsNothing);
   });
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -93,10 +94,9 @@ class _SimulatorHomeState extends State<SimulatorHome> {
   late ComparisonRunner _runner = ComparisonRunner(_config);
   late ComparisonResult _result = _runner.snapshot();
   final _controllers = <String, TextEditingController>{};
-  final _importController = TextEditingController();
+  final _exportBaseNameController = TextEditingController(text: 'bus-bunching');
   int _tab = 0;
   bool _running = false;
-  bool _metricsExpanded = false;
   SummaryMetricDisplayMode _summaryMetricMode =
       SummaryMetricDisplayMode.percent;
   double _speed = 60;
@@ -108,11 +108,15 @@ class _SimulatorHomeState extends State<SimulatorHome> {
   SeedAverageProgress? _seedProgress;
   SeedAverageResult? _seedAverage;
   String? _seedStatus;
+  List<StoredExport> _storedExports = const [];
+  bool _storedExportsLoaded = false;
 
   @override
   void initState() {
     super.initState();
     _syncControllers();
+    _exportBaseNameController.addListener(_refreshExportFileNames);
+    _loadStoredExports();
   }
 
   @override
@@ -123,8 +127,14 @@ class _SimulatorHomeState extends State<SimulatorHome> {
     for (final controller in _controllers.values) {
       controller.dispose();
     }
-    _importController.dispose();
+    _exportBaseNameController
+      ..removeListener(_refreshExportFileNames)
+      ..dispose();
     super.dispose();
+  }
+
+  void _refreshExportFileNames() {
+    if (mounted) setState(() {});
   }
 
   void _syncControllers() {
@@ -344,46 +354,122 @@ class _SimulatorHomeState extends State<SimulatorHome> {
     _snack('$label をクリップボードへコピーしました');
   }
 
+  Future<void> _loadStoredExports({bool showError = false}) async {
+    try {
+      final exports = await FileBridge.listExports();
+      if (!mounted) return;
+      setState(() {
+        _storedExports = exports;
+        _storedExportsLoaded = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _storedExportsLoaded = true);
+      if (showError) _snack('保存履歴を読み込めません: $error');
+    }
+  }
+
+  String _exportFileName(FileExportKind kind) =>
+      '${_cleanExportBaseName(_exportBaseNameController.text)}-'
+      '${kind.fileSuffix}.${kind.extension}';
+
   Future<void> _save(
     String label,
+    FileExportKind kind,
     String fileName,
     String mimeType,
     String text,
   ) async {
-    final saved = await FileBridge.saveText(
-      fileName: fileName,
-      mimeType: mimeType,
-      content: text,
-    );
-    _snack(saved ? '$label を保存しました' : '$label の保存をキャンセルしました');
-  }
-
-  Future<void> _openJsonFile() async {
-    final text = await FileBridge.openText();
-    if (text == null) {
-      _snack('ファイル読込をキャンセルしました');
-      return;
-    }
-    setState(() => _importController.text = text);
-    _snack('JSONを読み込み欄へ取り込みました');
-  }
-
-  void _importTextAsConfig() {
     try {
-      final config = configFromJsonText(_importController.text);
+      final record = await FileBridge.saveText(
+        kind: kind,
+        fileName: fileName,
+        mimeType: mimeType,
+        content: text,
+      );
+      if (!mounted) return;
+      if (record == null) {
+        _snack('$label の保存をキャンセルしました');
+        return;
+      }
+      setState(() {
+        _storedExports = [
+          record,
+          for (final export in _storedExports)
+            if (export.id != record.id) export,
+        ];
+        _storedExportsLoaded = true;
+      });
+      _snack('$label を保存しました');
+    } catch (error) {
+      _snack('$label を保存できません: $error');
+    }
+  }
+
+  Future<void> _deleteStoredExport(StoredExport record) async {
+    try {
+      final deletedFile = await FileBridge.deleteExport(record.id);
+      if (!mounted) return;
+      setState(() {
+        _storedExports = [
+          for (final export in _storedExports)
+            if (export.id != record.id) export,
+        ];
+      });
+      _snack(
+        deletedFile
+            ? '${record.fileName} を削除しました'
+            : '${record.fileName} は見つからないため履歴だけ削除しました',
+      );
+    } catch (error) {
+      _snack('ファイルを削除できません: $error');
+    }
+  }
+
+  Future<String?> _readStoredExport(StoredExport record) async {
+    try {
+      final text = await FileBridge.readExport(record.id);
+      if (text == null) {
+        _snack('ファイルを読み込めません。一覧から削除できます');
+      }
+      return text;
+    } catch (error) {
+      _snack('ファイルを読み込めません: $error');
+      return null;
+    }
+  }
+
+  void _ensureExportType(String text, String expectedType) {
+    final decoded = jsonDecode(text);
+    if (decoded is! Map || decoded['type'] != expectedType) {
+      throw const FormatException('アプリで保存した対象JSONではありません');
+    }
+  }
+
+  Future<void> _importStoredConfig(StoredExport record) async {
+    if (!record.kind.canImportConfig) return;
+    final text = await _readStoredExport(record);
+    if (text == null) return;
+    try {
+      _ensureExportType(text, 'bus-bunching-config');
+      final config = configFromJsonText(text);
       _presetKey = 'custom';
       _config = config;
       _syncControllers();
       _resetRunner(config);
-      _snack('設定JSONを読み込みました');
+      _snack('${record.fileName} を設定として読み込みました');
     } catch (error) {
-      _snack('設定JSONを読み込めません: $error');
+      _snack('設定を読み込めません: $error');
     }
   }
 
-  void _importTextAsSeedAverage() {
+  Future<void> _importStoredSeedAverage(StoredExport record) async {
+    if (!record.kind.canImportSeedAverage) return;
+    final text = await _readStoredExport(record);
+    if (text == null) return;
     try {
-      final result = seedAverageFromJsonText(_importController.text);
+      _ensureExportType(text, 'bus-bunching-seed-average-results');
+      final result = seedAverageFromJsonText(text);
       setState(() {
         _seedAverage = result;
         _config = result.config;
@@ -391,9 +477,9 @@ class _SimulatorHomeState extends State<SimulatorHome> {
         _syncControllers();
       });
       _resetRunner(result.config);
-      _snack('シード平均JSONを読み込みました');
+      _snack('${record.fileName} を平均結果として読み込みました');
     } catch (error) {
-      _snack('シード平均JSONを読み込めません: $error');
+      _snack('シード平均結果を読み込めません: $error');
     }
   }
 
@@ -461,9 +547,6 @@ class _SimulatorHomeState extends State<SimulatorHome> {
       AnalysisPage(
         result: _result,
         runner: _runner,
-        metricsExpanded: _metricsExpanded,
-        onToggleMetricsExpanded: () =>
-            setState(() => _metricsExpanded = !_metricsExpanded),
         summaryMetricMode: _summaryMetricMode,
         onToggleSummaryMetricMode: () => setState(
           () => _summaryMetricMode =
@@ -505,55 +588,62 @@ class _SimulatorHomeState extends State<SimulatorHome> {
         onCancel: _cancelSeedAverage,
       ),
       IoPage(
-        controller: _importController,
-        comparison: _result,
-        seedAverage: _seedAverage,
-        onCopyConfig: () => _copy('設定JSON', exportConfigJson(_config)),
-        onCopyResults: () => _copy('結果JSON', exportComparisonJson(_result)),
-        onCopyMetricsCsv: () => _copy('指標CSV', exportMetricsCsv(_result)),
+        exportBaseNameController: _exportBaseNameController,
+        fileNameForKind: _exportFileName,
+        exports: _storedExports,
+        exportsLoaded: _storedExportsLoaded,
+        onCopyConfig: () => _copy('設定データ', exportConfigJson(_config)),
+        onCopyResults: () => _copy('比較結果', exportComparisonJson(_result)),
+        onCopyMetricsCsv: () => _copy('指標表', exportMetricsCsv(_result)),
         onCopySeedJson: _seedAverage == null
             ? null
-            : () => _copy('シード平均JSON', exportSeedAverageJson(_seedAverage!)),
+            : () => _copy('シード平均結果', exportSeedAverageJson(_seedAverage!)),
         onCopySeedCsv: _seedAverage == null
             ? null
-            : () => _copy('シード平均CSV', exportSeedAverageCsv(_seedAverage!)),
+            : () => _copy('シード平均指標表', exportSeedAverageCsv(_seedAverage!)),
         onSaveConfig: () => _save(
-          '設定JSON',
-          'bus-bunching-config.json',
+          '設定データ',
+          FileExportKind.config,
+          _exportFileName(FileExportKind.config),
           'application/json',
           exportConfigJson(_config),
         ),
         onSaveResults: () => _save(
-          '結果JSON',
-          'bus-bunching-results.json',
+          '比較結果',
+          FileExportKind.comparisonResults,
+          _exportFileName(FileExportKind.comparisonResults),
           'application/json',
           exportComparisonJson(_result),
         ),
         onSaveMetricsCsv: () => _save(
-          '指標CSV',
-          'bus-bunching-metrics.csv',
+          '指標表',
+          FileExportKind.metricsCsv,
+          _exportFileName(FileExportKind.metricsCsv),
           'text/csv',
           exportMetricsCsv(_result),
         ),
         onSaveSeedJson: _seedAverage == null
             ? null
             : () => _save(
-                'シード平均JSON',
-                'bus-bunching-seed-average-results.json',
+                'シード平均結果',
+                FileExportKind.seedAverageJson,
+                _exportFileName(FileExportKind.seedAverageJson),
                 'application/json',
                 exportSeedAverageJson(_seedAverage!),
               ),
         onSaveSeedCsv: _seedAverage == null
             ? null
             : () => _save(
-                'シード平均CSV',
-                'bus-bunching-seed-average-metrics.csv',
+                'シード平均指標表',
+                FileExportKind.seedAverageCsv,
+                _exportFileName(FileExportKind.seedAverageCsv),
                 'text/csv',
                 exportSeedAverageCsv(_seedAverage!),
               ),
-        onOpenJsonFile: _openJsonFile,
-        onImportConfig: _importTextAsConfig,
-        onImportSeedAverage: _importTextAsSeedAverage,
+        onRefreshExports: () => _loadStoredExports(showError: true),
+        onDeleteExport: _deleteStoredExport,
+        onImportConfig: _importStoredConfig,
+        onImportSeedAverage: _importStoredSeedAverage,
       ),
     ];
     return Scaffold(
@@ -620,16 +710,12 @@ class AnalysisPage extends StatelessWidget {
     super.key,
     required this.result,
     required this.runner,
-    required this.metricsExpanded,
-    required this.onToggleMetricsExpanded,
     required this.summaryMetricMode,
     required this.onToggleSummaryMetricMode,
   });
 
   final ComparisonResult result;
   final ComparisonRunner runner;
-  final bool metricsExpanded;
-  final VoidCallback onToggleMetricsExpanded;
   final SummaryMetricDisplayMode summaryMetricMode;
   final VoidCallback onToggleSummaryMetricMode;
 
@@ -646,10 +732,6 @@ class AnalysisPage extends StatelessWidget {
                   mode: mode,
                   sim: runner.sims[mode]!,
                   result: result.results[mode]!,
-                  baselineMetrics: result.plain.metrics,
-                  metricsExpanded: metricsExpanded,
-                  showMetricsToggle: mode == modeKeys.first,
-                  onToggleMetricsExpanded: onToggleMetricsExpanded,
                 ),
                 const SizedBox(height: 6),
               ],
@@ -894,11 +976,6 @@ const _primaryMetricDefinitions = [
   MetricDefinition('totalBlockedDelayMin', '前車待ち遅延', '分'),
 ];
 
-const _scenarioMetricDefinitions = [
-  ..._primaryMetricDefinitions,
-  MetricDefinition('totalSpringHoldMin', '保持', '分'),
-];
-
 const _detailMetricDefinitions = [
   MetricDefinition('avgWaitMin', '平均待ち時間', '分'),
   MetricDefinition('recentAvgWaitMin', '直近5分平均待ち', '分', detailLabel: '直近平均待ち'),
@@ -1128,6 +1205,15 @@ class SummaryGrid extends StatelessWidget {
       for (final definition in _primaryMetricDefinitions)
         _SummaryItem(
           definition.label,
+          displayMode == SummaryMetricDisplayMode.absolute
+              ? _DeltaDisplay(
+                  _formatMetricValue(
+                    definition,
+                    _metricNumber(result.plain.metrics, definition.key),
+                  ),
+                  MetricDeltaTone.neutral,
+                )
+              : null,
           _summaryMetricDisplay(
             definition,
             result.plain.metrics,
@@ -1187,7 +1273,9 @@ class SummaryGrid extends StatelessWidget {
               mainAxisSpacing: 8,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: columns == 3 ? 2.7 : 1.85,
+              childAspectRatio: displayMode == SummaryMetricDisplayMode.absolute
+                  ? (columns == 3 ? 2.0 : 1.45)
+                  : (columns == 3 ? 2.7 : 1.85),
               children: items.map((item) => _MetricTile(item: item)).toList(),
             );
           },
@@ -1198,8 +1286,9 @@ class SummaryGrid extends StatelessWidget {
 }
 
 class _SummaryItem {
-  const _SummaryItem(this.label, this.skip, this.spring);
+  const _SummaryItem(this.label, this.plain, this.skip, this.spring);
   final String label;
+  final _DeltaDisplay? plain;
   final _DeltaDisplay skip;
   final _DeltaDisplay spring;
 }
@@ -1225,6 +1314,8 @@ class _MetricTile extends StatelessWidget {
           children: [
             Text(item.label, style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: 4),
+            if (item.plain != null)
+              _DeltaText(prefix: 'なし', display: item.plain!),
             _DeltaText(prefix: 'S', display: item.skip),
             _DeltaText(prefix: 'Sp', display: item.spring),
           ],
@@ -1465,21 +1556,6 @@ class _ToneValue extends StatelessWidget {
   }
 }
 
-_DeltaDisplay _deltaDisplay(
-  MetricDefinition definition,
-  Map<String, dynamic> baseMetrics,
-  Map<String, dynamic> valueMetrics,
-) {
-  final base = _metricNumber(baseMetrics, definition.key);
-  final value = _metricNumber(valueMetrics, definition.key);
-  final absolute = _formatMetricValue(definition, value);
-  final rate = metricImprovementPercent(definition, base, value);
-  final tone = metricDeltaTone(definition, base, value);
-  if (rate == null) return _DeltaDisplay('- / $absolute', tone);
-  final sign = rate > 0 ? '+' : '';
-  return _DeltaDisplay('$sign${_fmt(rate, 0)}% / $absolute', tone);
-}
-
 _DeltaDisplay _summaryMetricDisplay(
   MetricDefinition definition,
   Map<String, dynamic> baseMetrics,
@@ -1556,19 +1632,11 @@ class ScenarioCard extends StatelessWidget {
     required this.mode,
     required this.sim,
     required this.result,
-    required this.baselineMetrics,
-    required this.metricsExpanded,
-    required this.showMetricsToggle,
-    required this.onToggleMetricsExpanded,
   });
 
   final String mode;
   final SimulationEngine sim;
   final ModeResult result;
-  final Map<String, dynamic> baselineMetrics;
-  final bool metricsExpanded;
-  final bool showMetricsToggle;
-  final VoidCallback onToggleMetricsExpanded;
 
   @override
   Widget build(BuildContext context) {
@@ -1615,26 +1683,6 @@ class ScenarioCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ),
-                if (showMetricsToggle) ...[
-                  const SizedBox(width: 4),
-                  Tooltip(
-                    message: metricsExpanded ? '全指標を隠す' : '全指標を表示',
-                    child: IconButton.filledTonal(
-                      onPressed: onToggleMetricsExpanded,
-                      style: IconButton.styleFrom(
-                        minimumSize: const Size(34, 34),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      icon: Icon(
-                        metricsExpanded
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
-                      ),
-                      iconSize: 22,
-                    ),
-                  ),
-                ],
               ],
             ),
             const SizedBox(height: 2),
@@ -1643,86 +1691,8 @@ class ScenarioCard extends StatelessWidget {
               width: double.infinity,
               child: CustomPaint(painter: RoutePainter(sim: sim)),
             ),
-            if (metricsExpanded) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final definition in _scenarioMetricDefinitions)
-                    _MiniMetric.fromDefinition(
-                      definition: definition,
-                      baseMetrics: baselineMetrics,
-                      metrics: metrics,
-                      compare: mode != 'plain',
-                    ),
-                ],
-              ),
-            ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _MiniMetric extends StatelessWidget {
-  const _MiniMetric(
-    this.label,
-    this.value, {
-    this.tone = MetricDeltaTone.neutral,
-  });
-
-  factory _MiniMetric.fromDefinition({
-    required MetricDefinition definition,
-    required Map<String, dynamic> baseMetrics,
-    required Map<String, dynamic> metrics,
-    required bool compare,
-  }) {
-    if (!compare) {
-      return _MiniMetric(
-        definition.label,
-        _formatMetricValue(definition, _metricNumber(metrics, definition.key)),
-      );
-    }
-    final display = _deltaDisplay(definition, baseMetrics, metrics);
-    return _MiniMetric(definition.label, display.text, tone: display.tone);
-  }
-
-  final String label;
-  final String value;
-  final MetricDeltaTone tone;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 104,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: metricDeltaToneColor(tone),
-              ),
-            ),
-          ),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
       ),
     );
   }
@@ -1736,14 +1706,12 @@ enum BusVisualState {
   alightOnlySkip,
   crowded,
   delayed,
-  followerClose,
 }
 
 const _normalBusColor = Color(0xff2c6fbb);
 const _blockedBusColor = Color(0xffc83f3f);
 const _springBusColor = Color(0xff7357c8);
 const _delayedBusColor = Color(0xffb47b13);
-const _followerCloseBusColor = Color(0xff16848b);
 const _hotspotStopColor = Color(0xfff4b24d);
 const _occupiedBerthColor = Color(0xff26313d);
 
@@ -1755,7 +1723,6 @@ Color busVisualStateColor(BusVisualState state) => switch (state) {
   BusVisualState.alightOnlySkip => _springBusColor,
   BusVisualState.crowded => _blockedBusColor,
   BusVisualState.delayed => _delayedBusColor,
-  BusVisualState.followerClose => _followerCloseBusColor,
 };
 
 BusVisualState busVisualStateFor(SimulationEngine sim, BusState bus) {
@@ -1779,12 +1746,6 @@ BusVisualState busVisualStateFor(SimulationEngine sim, BusState bus) {
       bus.delaySec > sim.config.delayThresholdMin * 60) {
     return BusVisualState.delayed;
   }
-  final follower = sim.findFollower(bus);
-  if (follower != null &&
-      sim.routeDistanceBehind(follower, bus) <=
-          sim.config.distanceThresholdStops) {
-    return BusVisualState.followerClose;
-  }
   return BusVisualState.normal;
 }
 
@@ -1798,7 +1759,6 @@ class RouteStatusLegend extends StatelessWidget {
       _LegendSwatch('前車待ち・満員', _blockedBusColor),
       _LegendSwatch('保持・補助・降車', _springBusColor),
       _LegendSwatch('遅延', _delayedBusColor),
-      _LegendSwatch('後続接近', _followerCloseBusColor),
       _LegendSwatch('需要集中', _hotspotStopColor),
       _LegendSwatch('使用中', _occupiedBerthColor),
     ];
@@ -1939,7 +1899,6 @@ class RoutePainter extends CustomPainter {
     BusVisualState.alightOnlySkip => '降車',
     BusVisualState.crowded => '満員',
     BusVisualState.delayed => '遅延',
-    BusVisualState.followerClose => '接近',
     BusVisualState.normal => '',
   };
 
@@ -2391,9 +2350,13 @@ class SettingsPage extends StatelessWidget {
     const groups = _settingsGroups;
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        if (notification is ScrollStartNotification ||
-            notification is UserScrollNotification) {
-          FocusManager.instance.primaryFocus?.unfocus();
+        final userDrag =
+            (notification is ScrollStartNotification &&
+                notification.dragDetails != null) ||
+            (notification is ScrollUpdateNotification &&
+                notification.dragDetails != null);
+        if (userDrag) {
+          _SettingsHelpOverlay.hide();
         }
         return false;
       },
@@ -2517,36 +2480,44 @@ const _settingsGroups = [
   _SettingsGroup('制御', [
     _ConfigField(
       'distanceThresholdStops',
-      '後続車間しきい値 停',
-      '後続バスとの距離がこの値より近いと、前車待ちや補助の判断に使われます。',
+      'スキップ: 後続車間しきい値 停',
+      'スキップ制御用です。後続バスがこの停留所数以内まで近づくと、前車待ちや降車のみ扱いの判断対象になります。',
     ),
     _ConfigField(
       'delayThresholdMin',
-      '先行遅延しきい値 分',
-      '先行バスの遅れがこの値を超えると、制御が働きやすくなります。',
+      'スキップ: 先行遅延しきい値 分',
+      'スキップ制御用です。先行バスの遅れがこの値を超えると、後続への補助や降車のみ扱いを検討します。',
     ),
     _ConfigField(
       'followerLoadLimit',
-      '後続混雑しきい値',
-      '後続バスの混雑度がこの値以下なら、補助や降車のみ扱いを許容しやすくなります。',
+      'スキップ: 後続混雑上限',
+      'スキップ制御用です。後続バスの混雑度がこの値以下なら、乗客を後続へ回す判断を許容しやすくなります。',
     ),
     _ConfigField(
       'springGainSecPerStop',
-      'スプリングゲイン',
-      '車間の偏りを戻すために、停車時間へ反映する強さです。',
+      '保持: 車間補正ゲイン',
+      '保持制御用です。車間の偏り1停留所あたり、停車保持へ何秒反映するかを決めます。',
     ),
     _ConfigField(
       'springDeadbandStops',
-      '不感帯 停',
-      '車間差がこの範囲内ならスプリング制御を弱め、細かな揺れを抑えます。',
+      '保持: 不感帯 停',
+      '保持制御用です。車間差がこの範囲内なら保持を弱め、細かな揺れを抑えます。',
     ),
     _ConfigField(
       'springDamping',
-      '遅延減衰',
-      '遅れが大きいときに保持を抑える係数です。大きいほど遅延時の追加停車を避けます。',
+      '保持: 遅延時の抑制',
+      '保持制御用です。遅れが大きいときに追加保持を抑える係数です。大きいほど遅延時の追加停車を避けます。',
     ),
-    _ConfigField('springMaxHoldSec', '最大保持秒', 'スプリング制御で追加できる最大停車時間です。'),
-    _ConfigField('springMinHoldSec', '最小保持秒', 'スプリング制御が働くときに確保する最小停車時間です。'),
+    _ConfigField(
+      'springMaxHoldSec',
+      '保持: 最大保持秒',
+      '保持制御用です。車間を戻すために追加できる最大停車時間です。',
+    ),
+    _ConfigField(
+      'springMinHoldSec',
+      '保持: 最小保持秒',
+      '保持制御用です。保持が働くときに確保する最小停車時間です。',
+    ),
   ]),
 ];
 
@@ -2668,9 +2639,22 @@ class _ConfigTextField extends StatefulWidget {
   State<_ConfigTextField> createState() => _ConfigTextFieldState();
 }
 
+class _SettingsHelpOverlay {
+  static VoidCallback? _hideCurrent;
+
+  static void set(VoidCallback hide) => _hideCurrent = hide;
+
+  static void clear(VoidCallback hide) {
+    if (_hideCurrent == hide) _hideCurrent = null;
+  }
+
+  static void hide() => _hideCurrent?.call();
+}
+
 class _ConfigTextFieldState extends State<_ConfigTextField> {
   late final FocusNode _focusNode;
   OverlayEntry? _helpOverlay;
+  Timer? _helpTimer;
   final double _fallbackFieldWidth = 280;
 
   @override
@@ -2683,6 +2667,7 @@ class _ConfigTextFieldState extends State<_ConfigTextField> {
   @override
   void dispose() {
     _focusNode.removeListener(_handleFocusChanged);
+    _helpTimer?.cancel();
     _hideHelpOverlay();
     _focusNode.dispose();
     super.dispose();
@@ -2690,10 +2675,16 @@ class _ConfigTextFieldState extends State<_ConfigTextField> {
 
   void _handleFocusChanged() {
     if (_focusNode.hasFocus) {
-      _showHelpOverlay();
+      _scheduleHelpOverlay();
     } else {
       _hideHelpOverlay();
     }
+  }
+
+  void _scheduleHelpOverlay() {
+    _helpTimer?.cancel();
+    _hideHelpOverlay();
+    _helpTimer = Timer(const Duration(milliseconds: 360), _showHelpOverlay);
   }
 
   void _showHelpOverlay() {
@@ -2703,12 +2694,26 @@ class _ConfigTextFieldState extends State<_ConfigTextField> {
       final fieldOffset = box?.localToGlobal(Offset.zero) ?? Offset.zero;
       final fieldSize = box?.size ?? Size(_fallbackFieldWidth, 0);
       final screenWidth = MediaQuery.sizeOf(context).width;
+      final screenHeight = MediaQuery.sizeOf(context).height;
+      final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+      final keyboardTop = keyboardInset > 0
+          ? screenHeight - keyboardInset
+          : screenHeight * 0.62;
       const screenMargin = 12.0;
       final bubbleWidth = screenWidth - screenMargin * 2;
       final arrowLeft = (fieldOffset.dx + 32 - screenMargin)
           .clamp(16.0, bubbleWidth - 22)
           .toDouble();
-      final bubbleTop = fieldOffset.dy + fieldSize.height + 6;
+      final fieldBottom = fieldOffset.dy + fieldSize.height;
+      const estimatedBubbleHeight = 96.0;
+      final availableBottom = keyboardTop - screenMargin;
+      final showAbove = fieldBottom + estimatedBubbleHeight > availableBottom;
+      final bubbleTop = showAbove
+          ? math.max(screenMargin, fieldOffset.dy - estimatedBubbleHeight - 6)
+          : fieldBottom + 6;
+      final maxBubbleHeight = showAbove
+          ? math.max(72.0, fieldOffset.dy - screenMargin - 6)
+          : math.max(72.0, availableBottom - bubbleTop);
       _helpOverlay = OverlayEntry(
         builder: (context) => Positioned(
           left: screenMargin,
@@ -2720,18 +2725,24 @@ class _ConfigTextFieldState extends State<_ConfigTextField> {
               child: _ParameterHelpBubble(
                 text: widget.field.description,
                 arrowLeft: arrowLeft,
+                arrowOnTop: !showAbove,
+                maxHeight: maxBubbleHeight,
               ),
             ),
           ),
         ),
       );
       Overlay.of(context).insert(_helpOverlay!);
+      _SettingsHelpOverlay.set(_hideHelpOverlay);
     });
   }
 
   void _hideHelpOverlay() {
+    _helpTimer?.cancel();
+    _helpTimer = null;
     _helpOverlay?.remove();
     _helpOverlay = null;
+    _SettingsHelpOverlay.clear(_hideHelpOverlay);
   }
 
   @override
@@ -2763,10 +2774,17 @@ class _ConfigTextFieldState extends State<_ConfigTextField> {
 }
 
 class _ParameterHelpBubble extends StatelessWidget {
-  const _ParameterHelpBubble({required this.text, required this.arrowLeft});
+  const _ParameterHelpBubble({
+    required this.text,
+    required this.arrowLeft,
+    required this.arrowOnTop,
+    required this.maxHeight,
+  });
 
   final String text;
   final double arrowLeft;
+  final bool arrowOnTop;
+  final double maxHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -2775,17 +2793,23 @@ class _ParameterHelpBubble extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         Positioned(
-          top: -5,
+          top: arrowOnTop ? -5 : null,
+          bottom: arrowOnTop ? null : -5,
           left: arrowLeft,
           child: Transform.rotate(
             angle: math.pi / 4,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: scheme.primaryContainer,
-                border: Border(
-                  top: BorderSide(color: scheme.outlineVariant),
-                  left: BorderSide(color: scheme.outlineVariant),
-                ),
+                border: arrowOnTop
+                    ? Border(
+                        top: BorderSide(color: scheme.outlineVariant),
+                        left: BorderSide(color: scheme.outlineVariant),
+                      )
+                    : Border(
+                        right: BorderSide(color: scheme.outlineVariant),
+                        bottom: BorderSide(color: scheme.outlineVariant),
+                      ),
                 borderRadius: BorderRadius.circular(2),
               ),
               child: const SizedBox(width: 10, height: 10),
@@ -2805,23 +2829,26 @@ class _ParameterHelpBubble extends StatelessWidget {
               ),
             ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline, size: 16, color: scheme.primary),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    text,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onPrimaryContainer,
-                      height: 1.35,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: scheme.primary),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onPrimaryContainer,
+                        height: 1.35,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -2990,12 +3017,13 @@ class _SeedAveragePageState extends State<SeedAveragePage> {
   }
 }
 
-class IoPage extends StatelessWidget {
+class IoPage extends StatefulWidget {
   const IoPage({
     super.key,
-    required this.controller,
-    required this.comparison,
-    required this.seedAverage,
+    required this.exportBaseNameController,
+    required this.fileNameForKind,
+    required this.exports,
+    required this.exportsLoaded,
     required this.onCopyConfig,
     required this.onCopyResults,
     required this.onCopyMetricsCsv,
@@ -3006,14 +3034,16 @@ class IoPage extends StatelessWidget {
     required this.onSaveMetricsCsv,
     required this.onSaveSeedJson,
     required this.onSaveSeedCsv,
-    required this.onOpenJsonFile,
+    required this.onRefreshExports,
+    required this.onDeleteExport,
     required this.onImportConfig,
     required this.onImportSeedAverage,
   });
 
-  final TextEditingController controller;
-  final ComparisonResult comparison;
-  final SeedAverageResult? seedAverage;
+  final TextEditingController exportBaseNameController;
+  final String Function(FileExportKind) fileNameForKind;
+  final List<StoredExport> exports;
+  final bool exportsLoaded;
   final VoidCallback onCopyConfig;
   final VoidCallback onCopyResults;
   final VoidCallback onCopyMetricsCsv;
@@ -3024,72 +3054,111 @@ class IoPage extends StatelessWidget {
   final VoidCallback onSaveMetricsCsv;
   final VoidCallback? onSaveSeedJson;
   final VoidCallback? onSaveSeedCsv;
-  final VoidCallback onOpenJsonFile;
-  final VoidCallback onImportConfig;
-  final VoidCallback onImportSeedAverage;
+  final Future<void> Function() onRefreshExports;
+  final Future<void> Function(StoredExport) onDeleteExport;
+  final Future<void> Function(StoredExport) onImportConfig;
+  final Future<void> Function(StoredExport) onImportSeedAverage;
+
+  @override
+  State<IoPage> createState() => _IoPageState();
+}
+
+class _IoPageState extends State<IoPage> {
+  bool _showAnalystExports = false;
 
   @override
   Widget build(BuildContext context) {
+    final appExports = widget.exports
+        .where(
+          (record) =>
+              record.kind.canImportConfig || record.kind.canImportSeedAverage,
+        )
+        .toList();
+    final analystExports = widget.exports
+        .where(
+          (record) =>
+              !record.kind.canImportConfig && !record.kind.canImportSeedAverage,
+        )
+        .toList();
     return ListView(
+      cacheExtent: 1200,
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
       children: [
         Card(
           child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                FilledButton.tonalIcon(
-                  onPressed: onCopyConfig,
-                  icon: const Icon(Icons.settings),
-                  label: const Text('設定JSONコピー'),
+                const _IoSectionHeader(title: '出力', icon: Icons.ios_share),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: widget.exportBaseNameController,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    labelText: '保存名の主要部',
+                    hintText: '例: morning-rush',
+                    helperText: '用途名と .json / .csv は自動付与',
+                  ),
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: onCopyResults,
-                  icon: const Icon(Icons.data_object),
-                  label: const Text('結果JSONコピー'),
+                const SizedBox(height: 8),
+                _IoOutputRow(
+                  icon: Icons.settings,
+                  kind: FileExportKind.config,
+                  fileName: widget.fileNameForKind(FileExportKind.config),
+                  onCopy: widget.onCopyConfig,
+                  onSave: widget.onSaveConfig,
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: onCopyMetricsCsv,
-                  icon: const Icon(Icons.table_chart),
-                  label: const Text('指標CSVコピー'),
+                _IoOutputRow(
+                  icon: Icons.functions,
+                  kind: FileExportKind.seedAverageJson,
+                  fileName: widget.fileNameForKind(
+                    FileExportKind.seedAverageJson,
+                  ),
+                  onCopy: widget.onCopySeedJson,
+                  onSave: widget.onSaveSeedJson,
+                  last: true,
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: onCopySeedJson,
-                  icon: const Icon(Icons.functions),
-                  label: const Text('平均JSONコピー'),
+                const SizedBox(height: 6),
+                TextButton.icon(
+                  onPressed: () => setState(
+                    () => _showAnalystExports = !_showAnalystExports,
+                  ),
+                  icon: Icon(
+                    _showAnalystExports ? Icons.expand_less : Icons.expand_more,
+                  ),
+                  label: Text(
+                    _showAnalystExports ? '分析者用の出力を隠す' : '分析者用の出力を表示',
+                  ),
                 ),
-                FilledButton.tonalIcon(
-                  onPressed: onCopySeedCsv,
-                  icon: const Icon(Icons.grid_on),
-                  label: const Text('平均CSVコピー'),
-                ),
-                FilledButton.icon(
-                  onPressed: onSaveConfig,
-                  icon: const Icon(Icons.save_alt),
-                  label: const Text('設定JSON保存'),
-                ),
-                FilledButton.icon(
-                  onPressed: onSaveResults,
-                  icon: const Icon(Icons.save_alt),
-                  label: const Text('結果JSON保存'),
-                ),
-                FilledButton.icon(
-                  onPressed: onSaveMetricsCsv,
-                  icon: const Icon(Icons.save_alt),
-                  label: const Text('指標CSV保存'),
-                ),
-                FilledButton.icon(
-                  onPressed: onSaveSeedJson,
-                  icon: const Icon(Icons.save_alt),
-                  label: const Text('平均JSON保存'),
-                ),
-                FilledButton.icon(
-                  onPressed: onSaveSeedCsv,
-                  icon: const Icon(Icons.save_alt),
-                  label: const Text('平均CSV保存'),
-                ),
+                if (_showAnalystExports) ...[
+                  _IoOutputRow(
+                    icon: Icons.data_object,
+                    kind: FileExportKind.comparisonResults,
+                    fileName: widget.fileNameForKind(
+                      FileExportKind.comparisonResults,
+                    ),
+                    onCopy: widget.onCopyResults,
+                    onSave: widget.onSaveResults,
+                  ),
+                  _IoOutputRow(
+                    icon: Icons.table_chart,
+                    kind: FileExportKind.metricsCsv,
+                    fileName: widget.fileNameForKind(FileExportKind.metricsCsv),
+                    onCopy: widget.onCopyMetricsCsv,
+                    onSave: widget.onSaveMetricsCsv,
+                  ),
+                  _IoOutputRow(
+                    icon: Icons.grid_on,
+                    kind: FileExportKind.seedAverageCsv,
+                    fileName: widget.fileNameForKind(
+                      FileExportKind.seedAverageCsv,
+                    ),
+                    onCopy: widget.onCopySeedCsv,
+                    onSave: widget.onSaveSeedCsv,
+                    last: true,
+                  ),
+                ],
               ],
             ),
           ),
@@ -3099,46 +3168,77 @@ class IoPage extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(
-                  controller: controller,
-                  minLines: 8,
-                  maxLines: 16,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    labelText: 'JSON貼り付け',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FilledButton.tonalIcon(
-                    onPressed: onOpenJsonFile,
-                    icon: const Icon(Icons.folder_open),
-                    label: const Text('JSONファイルを選択'),
-                  ),
-                ),
-                const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: onImportConfig,
-                        icon: const Icon(Icons.upload_file),
-                        label: const Text('設定として読込'),
+                    const Expanded(
+                      child: _IoSectionHeader(
+                        title: '保存したファイル',
+                        icon: Icons.folder_copy,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: onImportSeedAverage,
-                        icon: const Icon(Icons.functions),
-                        label: const Text('平均結果として読込'),
-                      ),
+                    IconButton.filledTonal(
+                      onPressed: () {
+                        widget.onRefreshExports();
+                      },
+                      tooltip: '保存履歴を更新',
+                      icon: const Icon(Icons.refresh),
                     ),
                   ],
                 ),
+                if (!widget.exportsLoaded) ...[
+                  const SizedBox(height: 8),
+                  const LinearProgressIndicator(),
+                  const SizedBox(height: 10),
+                  Text(
+                    '保存履歴を読み込み中',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ] else if (appExports.isEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'まだこの端末で保存した設定やシード平均結果はありません',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ] else ...[
+                  const SizedBox(height: 4),
+                  for (var index = 0; index < appExports.length; index++)
+                    _StoredExportRow(
+                      record: appExports[index],
+                      onDelete: widget.onDeleteExport,
+                      onImportConfig: widget.onImportConfig,
+                      onImportSeedAverage: widget.onImportSeedAverage,
+                      last:
+                          index == appExports.length - 1 &&
+                          analystExports.isEmpty,
+                    ),
+                ],
+                if (analystExports.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => setState(
+                      () => _showAnalystExports = !_showAnalystExports,
+                    ),
+                    icon: Icon(
+                      _showAnalystExports
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                    ),
+                    label: Text(
+                      _showAnalystExports ? '分析者用ファイルを隠す' : '分析者用ファイルを表示',
+                    ),
+                  ),
+                  if (_showAnalystExports)
+                    for (var index = 0; index < analystExports.length; index++)
+                      _StoredExportRow(
+                        record: analystExports[index],
+                        onDelete: widget.onDeleteExport,
+                        onImportConfig: widget.onImportConfig,
+                        onImportSeedAverage: widget.onImportSeedAverage,
+                        last: index == analystExports.length - 1,
+                      ),
+                ],
               ],
             ),
           ),
@@ -3146,6 +3246,246 @@ class IoPage extends StatelessWidget {
       ],
     );
   }
+}
+
+class _IoSectionHeader extends StatelessWidget {
+  const _IoSectionHeader({required this.title, required this.icon});
+
+  final String title;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+}
+
+class _IoOutputRow extends StatelessWidget {
+  const _IoOutputRow({
+    required this.icon,
+    required this.kind,
+    required this.fileName,
+    required this.onCopy,
+    required this.onSave,
+    this.last = false,
+  });
+
+  final IconData icon;
+  final FileExportKind kind;
+  final String fileName;
+  final VoidCallback? onCopy;
+  final VoidCallback? onSave;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: last
+                ? Colors.transparent
+                : Colors.black.withValues(alpha: 0.08),
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                SizedBox(width: 30, child: Icon(icon, size: 21)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        kind.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: onCopy,
+                    icon: const Icon(Icons.content_copy),
+                    label: const Text('コピー'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onSave,
+                    icon: const Icon(Icons.save_alt),
+                    label: const Text('保存'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StoredExportRow extends StatelessWidget {
+  const _StoredExportRow({
+    required this.record,
+    required this.onDelete,
+    required this.onImportConfig,
+    required this.onImportSeedAverage,
+    this.last = false,
+  });
+
+  final StoredExport record;
+  final Future<void> Function(StoredExport) onDelete;
+  final Future<void> Function(StoredExport) onImportConfig;
+  final Future<void> Function(StoredExport) onImportSeedAverage;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: last
+                ? Colors.transparent
+                : Colors.black.withValues(alpha: 0.08),
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 32,
+                  child: Icon(_exportKindIcon(record.kind), size: 22),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        record.fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        '${record.kind.label} ・ ${_savedAtText(record.savedAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    onDelete(record);
+                  },
+                  tooltip: 'ファイルを削除',
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
+            ),
+            if (record.kind.canImportConfig ||
+                record.kind.canImportSeedAverage) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: record.kind.canImportConfig
+                    ? FilledButton.icon(
+                        onPressed: () {
+                          onImportConfig(record);
+                        },
+                        icon: const Icon(Icons.upload_file),
+                        label: const Text('設定として読込'),
+                      )
+                    : FilledButton.tonalIcon(
+                        onPressed: () {
+                          onImportSeedAverage(record);
+                        },
+                        icon: const Icon(Icons.functions),
+                        label: const Text('平均結果として読込'),
+                      ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _exportKindIcon(FileExportKind kind) => switch (kind) {
+  FileExportKind.config => Icons.settings,
+  FileExportKind.comparisonResults => Icons.data_object,
+  FileExportKind.metricsCsv => Icons.table_chart,
+  FileExportKind.seedAverageJson => Icons.functions,
+  FileExportKind.seedAverageCsv => Icons.grid_on,
+};
+
+String _savedAtText(DateTime savedAt) {
+  final local = savedAt.toLocal();
+  return '${local.year}/${_two(local.month)}/${_two(local.day)} '
+      '${_two(local.hour)}:${_two(local.minute)}';
+}
+
+String _two(int value) => value.toString().padLeft(2, '0');
+
+String _cleanExportBaseName(String text) {
+  final withoutKnownExtension = text.trim().replaceFirst(
+    RegExp(r'\.(json|csv)$', caseSensitive: false),
+    '',
+  );
+  final source = withoutKnownExtension.isEmpty
+      ? 'bus-bunching'
+      : withoutKnownExtension;
+  final cleaned = source
+      .replaceAll(RegExp(r'[\\/:*?"<>|]+'), '-')
+      .replaceAll(RegExp(r'\s+'), '-')
+      .replaceAll(RegExp(r'-+'), '-')
+      .replaceAll(RegExp(r'^[-.]+|[-.]+$'), '');
+  return cleaned.isEmpty ? 'bus-bunching' : cleaned;
 }
 
 String _timeText(double sec) {
