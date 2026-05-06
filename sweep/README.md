@@ -89,6 +89,11 @@ python -m bus_sweep.cli benchmark --config configs/default_experiment.json --see
 | 3 | 最大遅延 | `maxDelayMin` | 小さいほど良い | 終了時点で最も遅れているバスの遅延です。局所破綻を見ます。 |
 | 2 | 複数回制御スキップ人数 | `multiControlSkippedPassengers` | 小さいほど良い | 2回以上、制御スキップされた人数です。公平性上の副作用を見ます。 |
 | 2 | 制御スキップ後満員影響人数 | `fullDeniedAfterControlSkipPassengers` | 小さいほど良い | 制御スキップ後に満員などでさらに乗れなかった人数です。悪い連鎖を見ます。 |
+| 2 | 自発見送り人数 | `voluntaryDeferredPassengers` | 小さいほど良い | 混雑率可視化により自発的に後発便を選んだ人数です。制御スキップや満員通過とは別に見ます。 |
+| 2 | 自発見送り発生回数 | `voluntaryDeferralEvents` | 小さいほど良い | 自発見送りが発生した停車回数です。 |
+| 2 | 総自発見送り人数イベント | `totalVoluntaryDeferralPassengerEvents` | 小さいほど良い | 自発見送りの延べ人数です。同じ乗客が複数回見送った場合は複数回数えます。 |
+| 2 | 自発見送り平均追加待ち | `voluntaryDeferralAvgExtraMin` | 小さいほど良い | 自発見送りした人の、初回見送りから実乗車までの平均時間です。 |
+| 2 | 自発見送り最大追加待ち | `voluntaryDeferralMaxExtraMin` | 小さいほど良い | 自発見送りした人の、初回見送りから実乗車までの最大時間です。 |
 | 2 | 平均総所要時間 | `avgTotalMin` | 小さいほど良い | 完了済み乗客だけの、発生から降車までの平均です。未完了者が多いrunでは補正指標を優先します。 |
 | 2 | 上位5%総所要時間 | `top5TotalMin` | 小さいほど良い | 完了済み乗客だけの総所要時間95パーセンタイルです。 |
 | 2 | 中央値待ち時間 | `medianWaitMin` | 小さいほど良い | 乗車できた乗客の典型的な待ち時間です。平均とのズレで偏りを見ます。 |
@@ -207,3 +212,7 @@ python -m bus_sweep.cli benchmark --config configs/default_experiment.json --see
 | `springDamping` | スプリング遅延減衰 |
 | `springMaxHoldSec` | 最大スプリング保持秒 |
 | `springMinHoldSec` | 最小スプリング保持秒 |
+| `springVoluntaryDeferralEnabled` | スプリング法で自発見送りを考慮 |
+| `springControlSkipEnabled` | スプリング法で補助スキップを採用 |
+| `springHoldingEnabled` | スプリング法で保持を採用 |
+| `forbidHoldingWhenFull` | 満員時のスプリング保持禁止 |

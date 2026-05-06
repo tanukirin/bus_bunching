@@ -41,6 +41,9 @@ PRESETS: dict[str, dict[str, Any]] = {
         "springDamping": 0,
         "springMaxHoldSec": 180,
         "springMinHoldSec": 20,
+        "springVoluntaryDeferralEnabled": False,
+        "springControlSkipEnabled": True,
+        "springHoldingEnabled": True,
         "forbidHoldingWhenFull": True,
         "fixedStopSec": 13,
         "boardingSetupSec": 3.5,
@@ -61,6 +64,23 @@ def number_with_default(value: Any, fallback: float) -> float:
     except (TypeError, ValueError):
         return fallback
     return number if math.isfinite(number) else fallback
+
+
+def bool_with_default(value: Any, fallback: bool) -> bool:
+    if value is None:
+        return fallback
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+        return fallback
+    if isinstance(value, (int, float)):
+        return value != 0
+    return fallback
 
 
 def legacy_delay_scale_to_mean(base_travel_sec: float, scale_sec: float) -> float:
@@ -122,8 +142,10 @@ def normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     c["springDamping"] = max(0.0, number_with_default(c.get("springDamping"), 0.06))
     c["springMaxHoldSec"] = max(0.0, number_with_default(c.get("springMaxHoldSec"), 45))
     c["springMinHoldSec"] = max(0.0, number_with_default(c.get("springMinHoldSec"), 8))
-    raw_forbid_holding = raw.get("forbidHoldingWhenFull", True)
-    c["forbidHoldingWhenFull"] = str(raw_forbid_holding).lower() not in {"false", "0", "no", "off"}
+    c["springVoluntaryDeferralEnabled"] = bool_with_default(raw.get("springVoluntaryDeferralEnabled"), False)
+    c["springControlSkipEnabled"] = bool_with_default(raw.get("springControlSkipEnabled"), True)
+    c["springHoldingEnabled"] = bool_with_default(raw.get("springHoldingEnabled"), True)
+    c["forbidHoldingWhenFull"] = bool_with_default(raw.get("forbidHoldingWhenFull"), True)
     c["hotspotMultiplier"] = max(0.0, number_with_default(c.get("hotspotMultiplier"), 1))
     hotspot_stops = c.get("hotspotStops") or []
     c["hotspotStops"] = [int(n) for n in hotspot_stops if isinstance(n, (int, float)) and 0 <= int(n) < c["stopCount"]]

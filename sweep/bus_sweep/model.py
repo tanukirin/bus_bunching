@@ -81,6 +81,11 @@ class Passenger:
     firstSkipTime: float | None = None
     firstDeniedTime: float | None = None
     skippedAt: list[dict[str, Any]] = field(default_factory=list)
+    voluntaryDeferralCount: int = 0
+    voluntaryDeferralAttempts: int = 0
+    firstVoluntaryDeferralTime: float | None = None
+    voluntaryDeferredAt: list[dict[str, Any]] = field(default_factory=list)
+    voluntaryDeferredBusId: int | None = None
     deniedFullCount: int = 0
     fullDeniedAfterControlSkipCount: int = 0
     lastFullDeniedBusId: int | None = None
@@ -202,6 +207,7 @@ class Simulation:
         self.history: list[dict[str, Any]] = []
         self.skipLog: list[dict[str, Any]] = []
         self.fullPassLog: list[dict[str, Any]] = []
+        self.voluntaryDeferralLog: list[dict[str, Any]] = []
         self.blockLog: list[dict[str, Any]] = []
         self.springHoldLog: list[dict[str, Any]] = []
         self.springSignalLog: list[dict[str, Any]] = []
@@ -257,6 +263,10 @@ class Simulation:
         return buses
 
     def start_segment(self, bus: Bus, from_stop: int, advance_counter: bool = True) -> None:
+        if 0 <= from_stop < len(self.waiting):
+            for passenger in self.waiting[from_stop]:
+                if passenger.voluntaryDeferredBusId == bus.id:
+                    passenger.voluntaryDeferredBusId = None
         if advance_counter:
             bus.segmentIndex += 1
         route_start = math.floor(bus.routePos) if math.isfinite(bus.routePos) else from_stop
@@ -411,18 +421,27 @@ class Simulation:
         else:
             bus.springConsecutiveSkips = 0
             queue = self.waiting[stop]
+            deferred_ids = self.apply_voluntary_deferrals(bus, stop, queue)
             capacity_left = self.config["capacity"] - len(bus.onboard)
-            board_count = int(clamp(capacity_left, 0, len(queue)))
-            for _ in range(board_count):
-                p = queue.pop(0)
-                p.boardTime = self.time
-                bus.onboard.append(p)
-                boarded += 1
-            if queue:
-                for p in queue:
+            board_limit = int(clamp(capacity_left, 0, len(queue)))
+            remaining_queue: list[Passenger] = []
+            full_denied: list[Passenger] = []
+            for p in queue:
+                if p.id in deferred_ids:
+                    remaining_queue.append(p)
+                elif boarded < board_limit:
+                    p.boardTime = self.time
+                    bus.onboard.append(p)
+                    boarded += 1
+                else:
+                    remaining_queue.append(p)
+                    full_denied.append(p)
+            self.waiting[stop] = remaining_queue
+            if full_denied:
+                for p in full_denied:
                     self.record_full_denial(p, bus.id, self.time)
-                self.fullPassLog.append({"time": self.time, "stop": stop, "busId": bus.id, "passengers": len(queue)})
-            bus.lastAction = f"乗{boarded} 降{len(alighting)}" if boarded or alighting else "停車短"
+                self.fullPassLog.append({"time": self.time, "stop": stop, "busId": bus.id, "passengers": len(full_denied)})
+            bus.lastAction = f"乗{boarded} 降{len(alighting)}" if boarded or alighting else (f"自発見送り{len(deferred_ids)}" if deferred_ids else "停車短")
 
         base_dwell = self.calculate_dwell_time(bus, boarded, len(alighting), bool(decision.get("skip")))
         hold_sec = max(0.0, float(decision.get("holdSec") or 0))
@@ -470,23 +489,96 @@ class Simulation:
         if not queue:
             return
         boarded = 0
-        while queue and len(bus.onboard) < self.config["capacity"] and queue[0].arrivalTime <= current_time + 1e-9:
-            p = queue.pop(0)
-            p.boardTime = max(p.arrivalTime, self.time)
-            bus.onboard.append(p)
-            boarded += 1
+        remaining_queue: list[Passenger] = []
+        for p in queue:
+            if len(bus.onboard) < self.config["capacity"] and p.arrivalTime <= current_time + 1e-9 and p.voluntaryDeferredBusId != bus.id:
+                p.boardTime = max(p.arrivalTime, self.time)
+                bus.onboard.append(p)
+                boarded += 1
+            else:
+                remaining_queue.append(p)
+        self.waiting[stop] = remaining_queue
         if boarded:
             bus.lastAction = f"蛛懷ｻ願ｿｽ荵苓ｻ・{boarded}"
-        if queue and len(bus.onboard) >= self.config["capacity"]:
+        if remaining_queue and len(bus.onboard) >= self.config["capacity"]:
             denied_now = 0
-            for p in queue:
-                if p.arrivalTime <= current_time + 1e-9 and p.lastFullDeniedBusId != bus.id:
+            for p in remaining_queue:
+                if p.arrivalTime <= current_time + 1e-9 and p.lastFullDeniedBusId != bus.id and p.voluntaryDeferredBusId != bus.id:
                     self.record_full_denial(p, bus.id, p.arrivalTime)
                     denied_now += 1
             if denied_now:
                 self.fullPassLog.append({"time": current_time, "stop": stop, "busId": bus.id, "passengers": denied_now})
         if self.config["forbidHoldingWhenFull"] and len(bus.onboard) >= self.config["capacity"]:
             self.cancel_spring_hold_for_full_bus(bus, current_time)
+
+    def voluntary_deferral_seed(self, passenger: Passenger, bus: Bus, stop: int, attempt: int) -> int:
+        seed = u32(int(self.config["seed"]) or 1)
+        for value in (passenger.id, bus.id, stop, attempt):
+            seed = u32(imul(seed ^ u32(int(value) + 0x9E3779B9), 0x85EBCA6B) + 0xC2B2AE35)
+        return seed or 1
+
+    def voluntary_deferral_context(self, bus: Bus, follower: Bus, distance_behind: float) -> dict[str, float] | None:
+        if distance_behind > 1.0:
+            return None
+        capacity = max(1, self.config["capacity"])
+        leader_load = len(bus.onboard) / capacity
+        if leader_load < 0.40:
+            return None
+        follower_load = len(follower.onboard) / capacity
+        delta = leader_load - follower_load
+        rate = delta - 0.15
+        fifty_meters_in_stops = 0.05 / max(1e-9, self.config["stopDistanceKm"])
+        if distance_behind <= fifty_meters_in_stops:
+            rate += 0.15
+        return {
+            "rate": clamp(rate, 0.0, 1.0),
+            "delta": delta,
+            "leaderLoad": leader_load,
+            "followerLoad": follower_load,
+            "distanceBehindStops": distance_behind,
+        }
+
+    def apply_voluntary_deferrals(self, bus: Bus, stop: int, queue: list[Passenger]) -> set[int]:
+        if not self.springEnabled or not self.config.get("springVoluntaryDeferralEnabled") or not queue:
+            return set()
+        follower = self.find_follower(bus)
+        if follower is None:
+            return set()
+        distance_behind = self.route_distance_behind(follower, bus)
+        ctx = self.voluntary_deferral_context(bus, follower, distance_behind)
+        if ctx is None:
+            return set()
+        rate = ctx["rate"]
+        if rate <= 0:
+            return set()
+
+        deferred: list[Passenger] = []
+        for p in queue:
+            if p.arrivalTime > self.time + 1e-9:
+                continue
+            attempt = p.voluntaryDeferralAttempts + 1
+            p.voluntaryDeferralAttempts = attempt
+            if SeededRng(self.voluntary_deferral_seed(p, bus, stop, attempt)).next() >= rate:
+                continue
+            p.voluntaryDeferralCount += 1
+            if p.firstVoluntaryDeferralTime is None:
+                p.firstVoluntaryDeferralTime = self.time
+            p.voluntaryDeferredBusId = bus.id
+            p.voluntaryDeferredAt.append({"time": self.time, "stop": stop, "busId": bus.id, "rate": rate, "followerId": follower.id})
+            deferred.append(p)
+
+        if deferred:
+            self.voluntaryDeferralLog.append(
+                {
+                    "time": self.time,
+                    "stop": stop,
+                    "busId": bus.id,
+                    "followerId": follower.id,
+                    "passengers": len(deferred),
+                    **ctx,
+                }
+            )
+        return {p.id for p in deferred}
 
     def record_full_denial(self, passenger: Passenger, bus_id: int, denied_time: float) -> None:
         passenger.deniedFullCount += 1
@@ -622,7 +714,7 @@ class Simulation:
         self.springSignalLog.append({"time": self.time, "busId": bus.id, "stop": stop, **ctx})
         h = ctx["idealHeadwayStops"]
         deadband = self.config["springDeadbandStops"]
-        hold_candidate = ctx["springSignal"] < -deadband and ctx["hFront"] < h and ctx["hBack"] > h
+        hold_candidate = self.config.get("springHoldingEnabled", True) and ctx["springSignal"] < -deadband and ctx["hFront"] < h and ctx["hBack"] > h
         if hold_candidate:
             if self.config["forbidHoldingWhenFull"] and len(bus.onboard) >= self.config["capacity"]:
                 return {"skip": False, "holdSec": 0, "reason": "full bus holding forbidden", **ctx}
@@ -633,7 +725,7 @@ class Simulation:
             )
             if hold_sec >= self.config["springMinHoldSec"]:
                 return {"skip": False, "holdSec": hold_sec, "reason": f"spring hold signal={ctx['springSignal']:.2f}", **ctx}
-        skip_candidate = ctx["springSignal"] > deadband and ctx["hFront"] > h and ctx["hBack"] < h
+        skip_candidate = self.config.get("springControlSkipEnabled", True) and ctx["springSignal"] > deadband and ctx["hFront"] > h and ctx["hBack"] < h
         if not skip_candidate:
             return {"skip": False, "holdSec": 0, "reason": f"spring neutral signal={ctx['springSignal']:.2f}"}
         base_decision = self.distance_skip_decision(bus, stop, alighting_count, True)
@@ -807,6 +899,11 @@ class Simulation:
                 "deniedMaxExtraMin": metrics["deniedMaxExtraMin"],
                 "controlSkipAvgExtraMin": metrics["controlSkipAvgExtraMin"],
                 "controlSkipMaxExtraMin": metrics["controlSkipMaxExtraMin"],
+                "voluntaryDeferredPassengers": metrics["voluntaryDeferredPassengers"],
+                "voluntaryDeferralEvents": metrics["voluntaryDeferralEvents"],
+                "totalVoluntaryDeferralPassengerEvents": metrics["totalVoluntaryDeferralPassengerEvents"],
+                "voluntaryDeferralAvgExtraMin": metrics["voluntaryDeferralAvgExtraMin"],
+                "voluntaryDeferralMaxExtraMin": metrics["voluntaryDeferralMaxExtraMin"],
                 "totalSpringHoldMin": metrics["totalSpringHoldMin"],
                 "springInterventionCount": metrics["springInterventionCount"],
                 "totalBlockedDelayMin": metrics["totalBlockedDelayMin"],
@@ -834,6 +931,13 @@ class Simulation:
             (p.boardTime - p.firstSkipTime) / 60
             for p in control_skipped_boarded
             if p.boardTime is not None and p.firstSkipTime is not None
+        ]
+        voluntary_deferred = [p for p in self.allPassengers.values() if p.voluntaryDeferralCount > 0]
+        voluntary_deferred_boarded = [p for p in voluntary_deferred if p.boardTime is not None and p.firstVoluntaryDeferralTime is not None]
+        voluntary_deferral_extra = [
+            (p.boardTime - p.firstVoluntaryDeferralTime) / 60
+            for p in voluntary_deferred_boarded
+            if p.boardTime is not None and p.firstVoluntaryDeferralTime is not None
         ]
         denied = [p for p in self.allPassengers.values() if p.firstDeniedTime is not None]
         denied_boarded = [p for p in denied if p.boardTime is not None]
@@ -895,6 +999,11 @@ class Simulation:
             "controlSkipMaxExtraMin": max(control_skip_extra) if control_skip_extra else 0,
             "multiControlSkippedPassengers": len([p for p in control_skipped if p.skipCount >= 2]),
             "fullDeniedAfterControlSkipPassengers": len([p for p in self.allPassengers.values() if p.fullDeniedAfterControlSkipCount > 0]),
+            "voluntaryDeferredPassengers": len(voluntary_deferred),
+            "voluntaryDeferralEvents": len(self.voluntaryDeferralLog),
+            "totalVoluntaryDeferralPassengerEvents": sum(p.voluntaryDeferralCount for p in self.allPassengers.values()),
+            "voluntaryDeferralAvgExtraMin": mean(voluntary_deferral_extra),
+            "voluntaryDeferralMaxExtraMin": max(voluntary_deferral_extra) if voluntary_deferral_extra else 0,
             "fullPassEvents": len(self.fullPassLog),
             "fullDeniedPassengers": len([p for p in self.allPassengers.values() if p.deniedFullCount > 0]),
             "headwayStdStops": std(headways),

@@ -11,7 +11,9 @@ import 'domain/runner.dart';
 import 'domain/simulation.dart';
 import 'features/file_bridge.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const BusBunchingApp());
 }
 
@@ -304,6 +306,7 @@ class _SimulatorHomeState extends State<SimulatorHome> {
         '$nextSeed';
     _settingsDebounce?.cancel();
     _commitSettingsIfChanged();
+    _snack('シードを $nextSeed に変更しました');
   }
 
   void _toggleRun() {
@@ -334,15 +337,6 @@ class _SimulatorHomeState extends State<SimulatorHome> {
     final target = math.max(0.0, _runner.time - 180);
     _runner.seekTo(target);
     setState(() => _result = _runner.snapshot());
-  }
-
-  void _skipToEnd() {
-    _timer?.cancel();
-    _runner.seekTo(_result.config.durationSec.toDouble());
-    setState(() {
-      _running = false;
-      _result = _runner.snapshot();
-    });
   }
 
   Future<void> _copy(String label, String text) async {
@@ -451,7 +445,14 @@ class _SimulatorHomeState extends State<SimulatorHome> {
   }
 
   void _snack(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(text),
+        duration: const Duration(milliseconds: 1300),
+      ),
+    );
   }
 
   @override
@@ -570,7 +571,7 @@ class _SimulatorHomeState extends State<SimulatorHome> {
                 durationSec: _result.config.durationSec,
                 onToggleRun: _toggleRun,
                 onRewind: _rewind3Minutes,
-                onSkipToEnd: _skipToEnd,
+                onRandomSeed: _randomizeSeed,
                 onSeek: (value) {
                   _timer?.cancel();
                   _runner.seekTo(value);
@@ -707,7 +708,7 @@ class ControlPanel extends StatelessWidget {
     required this.durationSec,
     required this.onToggleRun,
     required this.onRewind,
-    required this.onSkipToEnd,
+    required this.onRandomSeed,
     required this.onSeek,
     required this.onSpeedChanged,
   });
@@ -718,7 +719,7 @@ class ControlPanel extends StatelessWidget {
   final int durationSec;
   final VoidCallback onToggleRun;
   final VoidCallback onRewind;
-  final VoidCallback onSkipToEnd;
+  final VoidCallback onRandomSeed;
   final ValueChanged<double> onSeek;
   final ValueChanged<double> onSpeedChanged;
 
@@ -796,15 +797,17 @@ class ControlPanel extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     Tooltip(
-                      message: '終了までスキップ',
+                      message: 'ランダムなシードに変更',
                       child: IconButton.filledTonal(
-                        onPressed: onSkipToEnd,
+                        onPressed: onRandomSeed,
                         style: FilledButton.styleFrom(
                           minimumSize: const Size(48, 48),
                           shape: const CircleBorder(),
                         ),
-                        icon: const Icon(Icons.skip_next),
-                        iconSize: 26,
+                        icon: const Text(
+                          '🎲',
+                          style: TextStyle(fontSize: 23, height: 1),
+                        ),
                       ),
                     ),
                   ],
@@ -2386,57 +2389,67 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const groups = _settingsGroups;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: presets.containsKey(presetKey)
-                        ? presetKey
-                        : 'custom',
-                    decoration: const InputDecoration(labelText: 'プリセット'),
-                    items: [
-                      if (!presets.containsKey(presetKey))
-                        const DropdownMenuItem(
-                          value: 'custom',
-                          child: Text('カスタム'),
-                        ),
-                      for (final entry in presets.entries)
-                        DropdownMenuItem(
-                          value: entry.key,
-                          child: Text(entry.value.name),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) onPresetChanged(value);
-                    },
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollStartNotification ||
+            notification is UserScrollNotification) {
+          FocusManager.instance.primaryFocus?.unfocus();
+        }
+        return false;
+      },
+      child: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: presets.containsKey(presetKey)
+                          ? presetKey
+                          : 'custom',
+                      decoration: const InputDecoration(labelText: 'プリセット'),
+                      items: [
+                        if (!presets.containsKey(presetKey))
+                          const DropdownMenuItem(
+                            value: 'custom',
+                            child: Text('カスタム'),
+                          ),
+                        for (final entry in presets.entries)
+                          DropdownMenuItem(
+                            value: entry.key,
+                            child: Text(entry.value.name),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) onPresetChanged(value);
+                      },
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  onPressed: () => _showParameterHelp(context, groups),
-                  tooltip: '全パラメータの説明',
-                  icon: const Icon(Icons.help_outline),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    onPressed: () => _showParameterHelp(context, groups),
+                    tooltip: '全パラメータの説明',
+                    icon: const Icon(Icons.help_outline),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        for (final group in groups)
-          _SettingsSection(
-            title: group.title,
-            fields: group.fields,
-            controllers: controllers,
-            onChanged: onSettingsChanged,
-            onRandomSeed: onRandomSeed,
-          ),
-      ],
+          const SizedBox(height: 12),
+          for (final group in groups)
+            _SettingsSection(
+              title: group.title,
+              fields: group.fields,
+              controllers: controllers,
+              onChanged: onSettingsChanged,
+              onRandomSeed: onRandomSeed,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -2738,7 +2751,10 @@ class _ConfigTextFieldState extends State<_ConfigTextField> {
             ? IconButton(
                 onPressed: widget.onRandomSeed,
                 tooltip: 'ランダムなシードに変更',
-                icon: const Icon(Icons.casino_outlined),
+                icon: const Text(
+                  '🎲',
+                  style: TextStyle(fontSize: 20, height: 1),
+                ),
               )
             : null,
       ),

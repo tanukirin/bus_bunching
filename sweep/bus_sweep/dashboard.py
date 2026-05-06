@@ -85,6 +85,11 @@ LOWER_IS_BETTER = {
     "controlSkippedPassengers",
     "controlSkipAvgExtraMin",
     "controlSkipMaxExtraMin",
+    "voluntaryDeferredPassengers",
+    "voluntaryDeferralEvents",
+    "totalVoluntaryDeferralPassengerEvents",
+    "voluntaryDeferralAvgExtraMin",
+    "voluntaryDeferralMaxExtraMin",
     "multiControlSkippedPassengers",
     "fullDeniedAfterControlSkipPassengers",
     "totalSpringHoldMin",
@@ -127,6 +132,7 @@ CANDIDATE_METRIC_COLUMNS = [
     "skip比 RMSE改善",
     "最大車間",
     "スキップ人数",
+    "自発見送り人数",
     "保持累計分",
     "最大保持秒",
     "注意理由",
@@ -199,6 +205,11 @@ METRIC_LABELS = {
     "controlSkipEvents": "制御スキップ回数",
     "controlSkipMaxExtraMin": "制御スキップ最大追加待ち",
     "controlSkippedPassengers": "制御スキップ人数",
+    "voluntaryDeferredPassengers": "自発見送り人数",
+    "voluntaryDeferralEvents": "自発見送り発生回数",
+    "totalVoluntaryDeferralPassengerEvents": "総自発見送り人数イベント",
+    "voluntaryDeferralAvgExtraMin": "自発見送り平均追加待ち",
+    "voluntaryDeferralMaxExtraMin": "自発見送り最大追加待ち",
     "springHoldEvents": "スプリング保持回数",
     "springInterventionCount": "スプリング介入回数",
     "springNegativeSignalAvg": "負スプリング信号平均",
@@ -263,6 +274,11 @@ METRIC_GUIDE = {
     "controlSkipMaxExtraMin": ("副作用", "小さいほど良い", "スキップ対象者の最大追加待ち。苦情リスクを見る。"),
     "multiControlSkippedPassengers": ("副作用", "小さいほど良い", "複数回スキップされた人数。避けたい副作用。"),
     "fullDeniedAfterControlSkipPassengers": ("副作用", "小さいほど良い", "スキップ後に満員で乗れなかった人数。かなり悪い副作用。"),
+    "voluntaryDeferredPassengers": ("利用者", "小さいほど良い", "混雑率可視化により自発的に後発便を選んだ人数。制御スキップや満員通過とは分けて見る。"),
+    "voluntaryDeferralEvents": ("利用者", "小さいほど良い", "自発見送りが発生した停車回数。施策が利用者行動に介入した頻度を見る。"),
+    "totalVoluntaryDeferralPassengerEvents": ("利用者", "小さいほど良い", "自発見送りの延べ人数。同じ乗客が複数回見送った場合は複数回数える。"),
+    "voluntaryDeferralAvgExtraMin": ("利用者", "小さいほど良い", "自発見送りした人の、初回見送りから実乗車までの平均時間。"),
+    "voluntaryDeferralMaxExtraMin": ("利用者", "小さいほど良い", "自発見送りした人の、初回見送りから実乗車までの最大時間。"),
     "fullPassEvents": ("副作用", "小さいほど良い", "満員通過回数。容量不足の兆候。"),
     "fullDeniedPassengers": ("副作用", "小さいほど良い", "満員の影響を受けた人数。容量不足の利用者影響。"),
     "springHoldEvents": ("制御負荷", "少ないほど良いとは限らない", "スプリング保持回数。介入量の把握に使う。"),
@@ -314,6 +330,9 @@ PARAM_LABELS = {
     "springDamping": "スプリング遅延減衰",
     "springMaxHoldSec": "最大スプリング保持秒",
     "springMinHoldSec": "最小スプリング保持秒",
+    "springVoluntaryDeferralEnabled": "自発見送りを考慮",
+    "springControlSkipEnabled": "スプリング補助スキップ",
+    "springHoldingEnabled": "スプリング保持",
     "forbidHoldingWhenFull": "満員時の保持禁止",
 }
 
@@ -663,6 +682,8 @@ def decision_display(df: pd.DataFrame) -> pd.DataFrame:
         "deniedMaxExtraMin",
         "controlSkippedPassengers",
         "controlSkipAvgExtraMin",
+        "voluntaryDeferredPassengers",
+        "voluntaryDeferralAvgExtraMin",
         "totalSpringHoldMin",
         "maxSpringHoldSec",
         "avgDelayMin",
@@ -697,6 +718,8 @@ def decision_display(df: pd.DataFrame) -> pd.DataFrame:
         "deniedMaxExtraMin": "乗車不可最大追加待ち",
         "controlSkippedPassengers": "制御スキップ人数",
         "controlSkipAvgExtraMin": "制御スキップ平均追加待ち",
+        "voluntaryDeferredPassengers": "自発見送り人数",
+        "voluntaryDeferralAvgExtraMin": "自発見送り平均追加待ち",
         "totalSpringHoldMin": "保持累計分",
         "maxSpringHoldSec": "最大保持秒",
         "avgDelayMin": "平均遅延",
@@ -729,8 +752,12 @@ def format_decision_table(df: pd.DataFrame) -> pd.DataFrame:
         "最大車間改善率": "{:+.1f}%",
         "上位5%待ち時間": "{:.2f}",
         "上位5%待ち改善率": "{:+.1f}%",
+        "制御スキップ人数": "{:.1f}",
+        "制御スキップ平均追加待ち": "{:.2f}",
         "スキップ人数": "{:.1f}",
         "スキップ平均追加待ち": "{:.2f}",
+        "自発見送り人数": "{:.1f}",
+        "自発見送り平均追加待ち": "{:.2f}",
         "保持累計分": "{:.1f}",
         "最大保持秒": "{:.1f}",
         "平均遅延": "{:.2f}",
@@ -940,6 +967,7 @@ def format_candidate_table(df: pd.DataFrame) -> pd.DataFrame:
         "headwayRmse_vs_skip_pct": "skip比 RMSE改善",
         "maxHeadwayStops": "最大車間",
         "controlSkippedPassengers": "スキップ人数",
+        "voluntaryDeferredPassengers": "自発見送り人数",
         "totalSpringHoldMin": "保持累計分",
         "maxSpringHoldSec": "最大保持秒",
     }
@@ -973,6 +1001,7 @@ def format_candidate_table(df: pd.DataFrame) -> pd.DataFrame:
         "skip比 RMSE改善": "{:+.1f}%",
         "最大車間": "{:.2f}",
         "スキップ人数": "{:.1f}",
+        "自発見送り人数": "{:.1f}",
         "保持累計分": "{:.1f}",
         "最大保持秒": "{:.1f}",
     }
@@ -1582,7 +1611,7 @@ with diff_tab:
             format_func=lambda i: f"#{int(diff_options.iloc[i]['順位'])} {diff_options.iloc[i]['判定']} / {diff_options.iloc[i]['scenario_label']}",
         )
         scenario_id = diff_options.iloc[diff_idx]["scenario_id"]
-        slope_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "avgWaitMin", "top5WaitMin", "headwayRmseStops", "maxHeadwayStops", "deniedPassengers", "deniedMaxExtraMin", "totalSpringHoldMin", "controlSkippedPassengers", "bunchScore"]
+        slope_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "avgWaitMin", "top5WaitMin", "headwayRmseStops", "maxHeadwayStops", "deniedPassengers", "deniedMaxExtraMin", "totalSpringHoldMin", "controlSkippedPassengers", "voluntaryDeferredPassengers", "bunchScore"]
         rows = aggregate[aggregate["scenario_id"].eq(scenario_id) & aggregate["metric"].isin(slope_metrics)].copy()
         rows["metric_label"] = rows["metric"].map(metric_label)
         rows["mode_label"] = rows["mode"].map(mode_label)
@@ -1630,13 +1659,17 @@ with risk_tab:
     if candidate_table.empty:
         st.info("候補がありません。")
     else:
-        risk_cols = st.columns(4)
+        risk_cols = st.columns(5)
         for col, metric, title in [
             (risk_cols[0], "totalSpringHoldMin", "保持累計分"),
             (risk_cols[1], "maxSpringHoldSec", "最大保持秒"),
             (risk_cols[2], "deniedPassengers", "乗車不可影響人数"),
             (risk_cols[3], "controlSkippedPassengers", "制御スキップ人数"),
+            (risk_cols[4], "voluntaryDeferredPassengers", "自発見送り人数"),
         ]:
+            if metric not in candidate_table.columns:
+                col.info(f"{title} はこのrunにありません。")
+                continue
             fig = px.histogram(
                 candidate_table,
                 x=metric,
@@ -1648,7 +1681,7 @@ with risk_tab:
             fig.update_layout(height=300, showlegend=False)
             col.plotly_chart(fig, use_container_width=True)
 
-        strip_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "deniedPassengers", "deniedMaxExtraMin", "totalSpringHoldMin", "maxSpringHoldSec", "controlSkippedPassengers"]
+        strip_metrics = ["adjustedAvgTotalMin", "adjustedTop5TotalMin", "deniedPassengers", "deniedMaxExtraMin", "totalSpringHoldMin", "maxSpringHoldSec", "controlSkippedPassengers", "voluntaryDeferredPassengers"]
         strips = candidate_table.melt(
             id_vars=["scenario_id", "判定", "順位", "scenario_label"],
             value_vars=[m for m in strip_metrics if m in candidate_table.columns],

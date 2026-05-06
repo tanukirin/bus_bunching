@@ -92,6 +92,11 @@ class ModelPortTests(unittest.TestCase):
             "controlSkippedPassengers",
             "controlSkipAvgExtraMin",
             "controlSkipMaxExtraMin",
+            "voluntaryDeferredPassengers",
+            "voluntaryDeferralEvents",
+            "totalVoluntaryDeferralPassengerEvents",
+            "voluntaryDeferralAvgExtraMin",
+            "voluntaryDeferralMaxExtraMin",
         }
         old_metric_names = {
             "skippedPassengers",
@@ -263,6 +268,121 @@ class ModelPortTests(unittest.TestCase):
         self.assertTrue(sim.springHoldLog[0]["cancelledByFull"])
         self.assertEqual(sim.stops[0].serviceEndTime, 105.0)
 
+    def test_spring_action_flags_disable_holding_and_control_skip(self) -> None:
+        hold_config = normalize_config({**PRESETS["urban"], "springHoldingEnabled": False})
+        hold_sim = Simulation(hold_config, "spring", [], include_history=False)
+        hold_sim.headway_context = lambda bus: {  # type: ignore[method-assign]
+            "leaderId": 2,
+            "followerId": 3,
+            "hFront": 1.0,
+            "hBack": 8.0,
+            "idealHeadwayStops": 4.0,
+            "springSignal": -7.0,
+        }
+        hold_decision = hold_sim.spring_decision(hold_sim.buses[0], 0)
+        self.assertEqual(hold_decision["holdSec"], 0)
+
+        skip_config = normalize_config({**PRESETS["urban"], "springControlSkipEnabled": False})
+        skip_sim = Simulation(skip_config, "spring", [], include_history=False)
+        skip_sim.headway_context = lambda bus: {  # type: ignore[method-assign]
+            "leaderId": 2,
+            "followerId": 3,
+            "hFront": 8.0,
+            "hBack": 1.0,
+            "idealHeadwayStops": 4.0,
+            "springSignal": 7.0,
+        }
+        skip_sim.distance_skip_decision = lambda *args, **kwargs: self.fail("distance skip should be disabled")  # type: ignore[method-assign]
+        skip_decision = skip_sim.spring_decision(skip_sim.buses[0], 0)
+        self.assertFalse(skip_decision["skip"])
+
+    def test_voluntary_deferral_rate_uses_bonus_and_clamp(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "capacity": 10, "stopDistanceKm": 0.5, "springVoluntaryDeferralEnabled": True})
+        sim = Simulation(config, "spring", [], include_history=False)
+        bus = sim.buses[0]
+        follower = sim.buses[1]
+        bus.onboard = [Passenger(i, 9, 1, arrivalTime=0.0) for i in range(5)]
+        follower.onboard = [Passenger(100 + i, 9, 1, arrivalTime=0.0) for i in range(4)]
+
+        self.assertEqual(sim.voluntary_deferral_context(bus, follower, 0.5)["rate"], 0.0)  # type: ignore[index]
+        self.assertAlmostEqual(sim.voluntary_deferral_context(bus, follower, 0.05)["rate"], 0.10, places=7)  # type: ignore[index]
+        self.assertIsNone(sim.voluntary_deferral_context(bus, follower, 1.01))
+
+        bus.onboard = [Passenger(i, 9, 1, arrivalTime=0.0) for i in range(10)]
+        follower.onboard = []
+        self.assertEqual(sim.voluntary_deferral_context(bus, follower, 0.05)["rate"], 1.0)  # type: ignore[index]
+
+        bus.onboard = [Passenger(i, 9, 1, arrivalTime=0.0) for i in range(3)]
+        self.assertIsNone(sim.voluntary_deferral_context(bus, follower, 0.05))
+
+    def test_voluntary_deferral_uses_seeded_passenger_probability(self) -> None:
+        def deferred_ids(seed: int) -> set[int]:
+            config = normalize_config({**PRESETS["urban"], "seed": seed, "capacity": 20, "springVoluntaryDeferralEnabled": True})
+            sim = Simulation(config, "spring", [], include_history=False)
+            bus = sim.buses[0]
+            follower = sim.buses[1]
+            bus.routePos = 0.0
+            follower.routePos = -0.1
+            for i, other in enumerate(sim.buses[2:], start=2):
+                other.routePos = -5.0 * i
+            bus.onboard = [Passenger(i, 9, 1, arrivalTime=0.0) for i in range(10)]
+            follower.onboard = []
+            queue = [Passenger(1000 + i, 0, 2, arrivalTime=0.0) for i in range(40)]
+            sim.waiting[0] = queue
+            for p in queue:
+                sim.allPassengers[p.id] = p
+            return sim.apply_voluntary_deferrals(bus, 0, queue)
+
+        first = deferred_ids(24680)
+        second = deferred_ids(24680)
+        self.assertEqual(first, second)
+        self.assertGreater(len(first), 0)
+        self.assertLess(len(first), 40)
+
+    def test_voluntary_deferral_metrics_do_not_mix_with_denied_or_control_skip(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 1, "capacity": 10, "springVoluntaryDeferralEnabled": True})
+        sim = Simulation(config, "spring", [], include_history=False)
+        bus = sim.buses[0]
+        follower = sim.buses[1]
+        bus.routePos = 0.0
+        follower.routePos = -0.1
+        bus.onboard = [Passenger(i, 9, 1, arrivalTime=0.0) for i in range(10)]
+        follower.onboard = []
+        queue = [Passenger(2000 + i, 0, 2, arrivalTime=0.0) for i in range(3)]
+        sim.waiting[0] = queue
+        for p in queue:
+            sim.allPassengers[p.id] = p
+
+        deferred = sim.apply_voluntary_deferrals(bus, 0, queue)
+        metrics = sim.compute_metrics()
+
+        self.assertEqual(len(deferred), 3)
+        self.assertEqual(metrics["voluntaryDeferredPassengers"], 3)
+        self.assertEqual(metrics["voluntaryDeferralEvents"], 1)
+        self.assertEqual(metrics["totalVoluntaryDeferralPassengerEvents"], 3)
+        self.assertEqual(metrics["controlSkippedPassengers"], 0)
+        self.assertEqual(metrics["deniedPassengers"], 0)
+
+    def test_voluntary_deferral_blocks_same_bus_during_dwell_only(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "seed": 1, "durationMin": 1, "capacity": 2})
+        sim = Simulation(config, "spring", [], include_history=False)
+        bus = sim.buses[0]
+        bus.status = "dwelling"
+        bus.serviceStopId = 0
+        bus.fromStop = 0
+        bus.dwellRemaining = 30.0
+        bus.serviceBoardingOpen = True
+        deferred = Passenger(1, 0, 2, arrivalTime=0.0, voluntaryDeferredBusId=bus.id)
+        boarding = Passenger(2, 0, 2, arrivalTime=0.0)
+        sim.waiting[0] = [deferred, boarding]
+
+        sim.board_during_dwell(bus, 12.0)
+
+        self.assertEqual(bus.onboard, [boarding])
+        self.assertEqual(sim.waiting[0], [deferred])
+        sim.start_segment(bus, 0)
+        self.assertIsNone(deferred.voluntaryDeferredBusId)
+
     def test_legacy_stop_fixed_parts_are_combined(self) -> None:
         config = normalize_config({"stopManeuverLossSec": 10, "doorTimeSec": 3})
         self.assertEqual(config["fixedStopSec"], 13)
@@ -302,6 +422,12 @@ class ModelPortTests(unittest.TestCase):
         self.assertFalse(normalize_config({"forbidHoldingWhenFull": False})["forbidHoldingWhenFull"])
         self.assertFalse(normalize_config({"forbidHoldingWhenFull": "false"})["forbidHoldingWhenFull"])
         self.assertFalse(normalize_config({"forbidHoldingWhenFull": 0})["forbidHoldingWhenFull"])
+        self.assertFalse(normalize_config({})["springVoluntaryDeferralEnabled"])
+        self.assertTrue(normalize_config({})["springControlSkipEnabled"])
+        self.assertTrue(normalize_config({})["springHoldingEnabled"])
+        self.assertTrue(normalize_config({"springVoluntaryDeferralEnabled": "true"})["springVoluntaryDeferralEnabled"])
+        self.assertFalse(normalize_config({"springControlSkipEnabled": "false"})["springControlSkipEnabled"])
+        self.assertFalse(normalize_config({"springHoldingEnabled": 0})["springHoldingEnabled"])
 
     def test_parameter_lower_bounds_prevent_invalid_runtime_values(self) -> None:
         config = normalize_config(

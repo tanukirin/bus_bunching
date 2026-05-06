@@ -27,6 +27,9 @@ SPRING_ONLY_PARAMS = {
     "springDamping",
     "springMaxHoldSec",
     "springMinHoldSec",
+    "springVoluntaryDeferralEnabled",
+    "springControlSkipEnabled",
+    "springHoldingEnabled",
 }
 
 PRIORITY_CHOICES = ("normal", "below-normal", "idle")

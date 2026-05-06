@@ -40,17 +40,29 @@ void main() {
     );
     final rewindRect = tester.getRect(find.byTooltip('3分戻す'));
     final playRect = tester.getRect(find.byTooltip('再生'));
-    final skipRect = tester.getRect(find.byTooltip('終了までスキップ'));
+    final randomSeedRect = tester.getRect(find.byTooltip('ランダムなシードに変更').first);
     expect(rewindRect.left, greaterThan(panelRect.center.dx));
     expect(playRect.center.dx, greaterThan(rewindRect.center.dx));
-    expect(playRect.center.dx, lessThan(skipRect.center.dx));
+    expect(playRect.center.dx, lessThan(randomSeedRect.center.dx));
     expect(
       find.descendant(of: find.byType(ControlPanel), matching: find.text('指標')),
       findsNothing,
     );
     expect(find.byTooltip('3分戻す'), findsOneWidget);
     expect(find.byTooltip('10分戻す'), findsNothing);
-    expect(find.byTooltip('終了までスキップ'), findsOneWidget);
+    expect(find.byTooltip('終了までスキップ'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(ControlPanel),
+        matching: find.byTooltip('ランダムなシードに変更'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: find.byType(ControlPanel), matching: find.text('🎲')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.skip_next), findsNothing);
     expect(find.byTooltip('リセット'), findsNothing);
     final timeRect = tester.getRect(find.text('00:00 / 120:00'));
     expect(timeRect.bottom, greaterThan(panelRect.center.dy));
@@ -97,8 +109,10 @@ void main() {
     expect(find.text('同じ値にすると、需要や遅れの乱数が同じになり、結果を再現できます。'), findsOneWidget);
     expect(find.text('123456'), findsOneWidget);
     await tester.tap(find.byTooltip('ランダムなシードに変更'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('123456'), findsNothing);
+    expect(find.textContaining('シードを '), findsOneWidget);
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('全パラメータの説明'));
     await tester.pumpAndSettle();
     expect(find.text('パラメータ説明'), findsOneWidget);
