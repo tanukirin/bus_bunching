@@ -968,8 +968,8 @@ class MetricDefinition {
 }
 
 const _primaryMetricDefinitions = [
-  MetricDefinition('avgWaitMin', '平均待ち', '分'),
-  MetricDefinition('adjustedAvgTotalMin', '補正総所要', '分'),
+  MetricDefinition('avgWaitMin', '待ち時間', '分'),
+  MetricDefinition('adjustedAvgTotalMin', '補正総所要時間', '分'),
   MetricDefinition('headwayRmseStops', '車間RMSE', '停'),
   MetricDefinition('maxHeadwayStops', '最大車間', '停'),
   MetricDefinition('deniedAvgExtraMin', 'スキップ乗客追加待ち', '分'),
@@ -1568,7 +1568,7 @@ _DeltaDisplay _summaryMetricDisplay(
   if (mode == SummaryMetricDisplayMode.absolute) {
     return _DeltaDisplay(_formatMetricValue(definition, value), tone);
   }
-  final rate = metricImprovementPercent(definition, base, value);
+  final rate = metricChangePercent(base, value);
   if (rate == null) return _DeltaDisplay('-', tone);
   final sign = rate > 0 ? '+' : '';
   return _DeltaDisplay('$sign${_fmt(rate, 0)}%', tone);
@@ -1606,6 +1606,17 @@ double? metricImprovementPercent(
     MetricDirection.higherBetter => (value - base) / base.abs() * 100,
     MetricDirection.neutral => null,
   };
+}
+
+double? metricChangePercent(double? base, double? value) {
+  if (base == null ||
+      value == null ||
+      !base.isFinite ||
+      !value.isFinite ||
+      base == 0) {
+    return null;
+  }
+  return (value - base) / base.abs() * 100;
 }
 
 MetricDeltaTone metricDeltaTone(
@@ -1705,13 +1716,11 @@ enum BusVisualState {
   assistSkip,
   alightOnlySkip,
   crowded,
-  delayed,
 }
 
 const _normalBusColor = Color(0xff2c6fbb);
 const _blockedBusColor = Color(0xffc83f3f);
 const _springBusColor = Color(0xff7357c8);
-const _delayedBusColor = Color(0xffb47b13);
 const _hotspotStopColor = Color(0xfff4b24d);
 const _occupiedBerthColor = Color(0xff26313d);
 
@@ -1722,7 +1731,6 @@ Color busVisualStateColor(BusVisualState state) => switch (state) {
   BusVisualState.assistSkip => _springBusColor,
   BusVisualState.alightOnlySkip => _springBusColor,
   BusVisualState.crowded => _blockedBusColor,
-  BusVisualState.delayed => _delayedBusColor,
 };
 
 BusVisualState busVisualStateFor(SimulationEngine sim, BusState bus) {
@@ -1742,10 +1750,6 @@ BusVisualState busVisualStateFor(SimulationEngine sim, BusState bus) {
   }
   final loadRatio = bus.onboard.length / math.max(1, sim.config.capacity);
   if (loadRatio > 0.85) return BusVisualState.crowded;
-  if (sim.config.delayThresholdMin > 0 &&
-      bus.delaySec > sim.config.delayThresholdMin * 60) {
-    return BusVisualState.delayed;
-  }
   return BusVisualState.normal;
 }
 
@@ -1757,8 +1761,7 @@ class RouteStatusLegend extends StatelessWidget {
     const items = [
       _LegendSwatch('通常', _normalBusColor),
       _LegendSwatch('前車待ち・満員', _blockedBusColor),
-      _LegendSwatch('保持・補助・降車', _springBusColor),
-      _LegendSwatch('遅延', _delayedBusColor),
+      _LegendSwatch('制御', _springBusColor),
       _LegendSwatch('需要集中', _hotspotStopColor),
       _LegendSwatch('使用中', _occupiedBerthColor),
     ];
@@ -1898,7 +1901,6 @@ class RoutePainter extends CustomPainter {
     BusVisualState.assistSkip => '補助',
     BusVisualState.alightOnlySkip => '降車',
     BusVisualState.crowded => '満員',
-    BusVisualState.delayed => '遅延',
     BusVisualState.normal => '',
   };
 

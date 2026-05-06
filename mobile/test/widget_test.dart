@@ -90,6 +90,23 @@ void main() {
     expect(find.text('スキップ制御'), findsWidgets);
   });
 
+  testWidgets('route legend omits delay and uses concise control label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const BusBunchingApp());
+
+    await tester.scrollUntilVisible(
+      find.text('制御'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('制御'), findsOneWidget);
+    expect(find.text('保持・補助・降車', skipOffstage: false), findsNothing);
+    expect(find.text('遅延', skipOffstage: false), findsNothing);
+  });
+
   testWidgets('settings auto-apply and random seed are available', (
     tester,
   ) async {
@@ -266,19 +283,25 @@ void main() {
     expect(find.text('％'), findsOneWidget);
     expect(find.text('値'), findsOneWidget);
     expect(find.textContaining('/'), findsNothing);
-    expect(find.text('S +10%'), findsWidgets);
-    expect(find.text('Sp -10%'), findsWidgets);
+    expect(find.text('待ち時間'), findsOneWidget);
+    expect(find.text('補正総所要時間'), findsOneWidget);
+    expect(find.text('平均待ち'), findsNothing);
+    expect(find.text('補正総所要'), findsNothing);
+    expect(find.text('S -10%'), findsWidgets);
+    expect(find.text('Sp +10%'), findsWidgets);
     await tester.tap(find.text('値'));
     await tester.pumpAndSettle();
     expect(find.text('なし 10.0分'), findsWidgets);
     expect(find.text('S 9.0分'), findsWidgets);
     expect(find.text('Sp 11.0分'), findsWidgets);
-    expect(find.text('S +10%'), findsNothing);
+    expect(find.text('S -10%'), findsNothing);
   });
 
   test('metric delta tones follow improvement thresholds', () {
     const definition = MetricDefinition('x', '試験', '分');
+    expect(metricChangePercent(100, 94), -6);
     expect(metricDeltaTone(definition, 100, 94), MetricDeltaTone.improved);
+    expect(metricChangePercent(100, 103), 3);
     expect(metricDeltaTone(definition, 100, 103), MetricDeltaTone.worsened);
     expect(metricDeltaTone(definition, 100, 97), MetricDeltaTone.neutral);
     const higherBetter = MetricDefinition(
@@ -315,6 +338,10 @@ void main() {
     expect(
       busVisualStateColor(BusVisualState.alightOnlySkip),
       busVisualStateColor(BusVisualState.assistSkip),
+    );
+    expect(
+      BusVisualState.values.map((state) => state.name),
+      isNot(contains('delayed')),
     );
   });
 
