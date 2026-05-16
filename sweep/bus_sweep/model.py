@@ -96,6 +96,7 @@ class Stop:
     id: int
     occupiedByBusId: int | None = None
     serviceEndTime: float = 0.0
+    occupiedBusEndTimes: dict[int, float] = field(default_factory=dict)
     blockedQueue: list[int] = field(default_factory=list)
     totalBlockedDelaySec: float = 0.0
     blockEvents: int = 0
@@ -262,6 +263,46 @@ class Simulation:
                 bus.pos = positive_modulo(route_pos, self.config["stopCount"])
         return buses
 
+    def effective_stop_berth_capacity(self, stop_id: int) -> int:
+        mode = self.config.get("stopBerthMode", "single")
+        capacity = max(1, int(self.config.get("stopBerthCapacity", 1)))
+        if mode == "all":
+            return capacity
+        if mode == "hotspot" and stop_id in self.config.get("hotspotStops", []):
+            return capacity
+        return 1
+
+    def stop_occupied_count(self, stop: Stop) -> int:
+        if stop.occupiedBusEndTimes:
+            return len(stop.occupiedBusEndTimes)
+        return 1 if stop.occupiedByBusId is not None else 0
+
+    def stop_has_available_berth(self, stop_id: int) -> bool:
+        stop = self.stops[stop_id]
+        return self.stop_occupied_count(stop) < self.effective_stop_berth_capacity(stop_id)
+
+    def stop_can_start_service(self, stop_id: int, bus_id: int) -> bool:
+        stop = self.stops[stop_id]
+        if bus_id in stop.occupiedBusEndTimes:
+            return True
+        if stop.blockedQueue and stop.blockedQueue[0] != bus_id:
+            return False
+        return self.stop_has_available_berth(stop_id)
+
+    def next_stop_release_time(self, stop: Stop) -> float:
+        if stop.occupiedBusEndTimes:
+            return min(stop.occupiedBusEndTimes.values())
+        return stop.serviceEndTime if stop.occupiedByBusId is not None else self.time
+
+    def sync_stop_legacy_fields(self, stop: Stop) -> None:
+        if stop.occupiedBusEndTimes:
+            bus_id, end_time = min(stop.occupiedBusEndTimes.items(), key=lambda item: item[1])
+            stop.occupiedByBusId = bus_id
+            stop.serviceEndTime = end_time
+        else:
+            stop.occupiedByBusId = None
+            stop.serviceEndTime = self.time
+
     def start_segment(self, bus: Bus, from_stop: int, advance_counter: bool = True) -> None:
         if 0 <= from_stop < len(self.waiting):
             for passenger in self.waiting[from_stop]:
@@ -353,8 +394,8 @@ class Simulation:
                 candidates.append(max(0.25, bus.segmentRemaining))
             elif bus.status == "blocked" and bus.blockedStopId is not None:
                 stop = self.stops[bus.blockedStopId]
-                if stop.occupiedByBusId is not None:
-                    candidates.append(max(0.25, stop.serviceEndTime - self.time))
+                if not self.stop_has_available_berth(bus.blockedStopId):
+                    candidates.append(max(0.25, self.next_stop_release_time(stop) - self.time))
                 else:
                     candidates.append(0.25)
         if self.include_history:
@@ -373,14 +414,13 @@ class Simulation:
         target_route_pos = bus.routeSegmentStart + 1
         target_stop = int(positive_modulo(target_route_pos, self.config["stopCount"]))
         leader_at_target = leader.status == "dwelling" and leader.serviceStopId == target_stop
-        berth_blocked = self.stops[target_stop].occupiedByBusId is not None or len(self.stops[target_stop].blockedQueue) > 0
+        berth_blocked = not self.stop_has_available_berth(target_stop) or len(self.stops[target_stop].blockedQueue) > 0
         if target_route_pos <= leader_route_pos + 1e-6 and (leader_at_target or berth_blocked):
             return target_route_pos
         return leader_route_pos - epsilon
 
     def handle_arrival(self, bus: Bus, stop: int) -> None:
-        berth = self.stops[stop]
-        if berth.occupiedByBusId is not None and berth.occupiedByBusId != bus.id:
+        if not self.stop_can_start_service(stop, bus.id):
             self.enter_blocked(bus, stop)
             return
         self.begin_service(bus, stop)
@@ -603,7 +643,10 @@ class Simulation:
         self.totalDwell = max(0.0, self.totalDwell - cancelled)
         if bus.serviceStopId is not None:
             stop = self.stops[bus.serviceStopId]
-            if stop.occupiedByBusId == bus.id:
+            if bus.id in stop.occupiedBusEndTimes:
+                stop.occupiedBusEndTimes[bus.id] = min(stop.occupiedBusEndTimes[bus.id], new_end)
+                self.sync_stop_legacy_fields(stop)
+            elif stop.occupiedByBusId == bus.id:
                 stop.serviceEndTime = min(stop.serviceEndTime, new_end)
             stop.totalOccupiedSec = max(0.0, stop.totalOccupiedSec - cancelled)
         for row in reversed(self.springHoldLog):
@@ -626,15 +669,18 @@ class Simulation:
 
     def occupy_stop(self, stop_id: int, bus_id: int, dwell_sec: float) -> None:
         stop = self.stops[stop_id]
-        stop.occupiedByBusId = bus_id
-        stop.serviceEndTime = self.time + dwell_sec
+        stop.occupiedBusEndTimes[bus_id] = self.time + dwell_sec
+        self.sync_stop_legacy_fields(stop)
         stop.totalOccupiedSec += dwell_sec
 
     def release_stop(self, stop_id: int | None, bus_id: int) -> None:
         if stop_id is None:
             return
         stop = self.stops[stop_id]
-        if stop.occupiedByBusId == bus_id:
+        if bus_id in stop.occupiedBusEndTimes:
+            del stop.occupiedBusEndTimes[bus_id]
+            self.sync_stop_legacy_fields(stop)
+        elif stop.occupiedByBusId == bus_id:
             stop.occupiedByBusId = None
             stop.serviceEndTime = self.time
 
@@ -656,7 +702,7 @@ class Simulation:
         stop = self.stops[bus.blockedStopId] if bus.blockedStopId is not None else None
         if stop is None:
             return
-        if stop.occupiedByBusId is None and stop.blockedQueue and stop.blockedQueue[0] == bus.id:
+        if self.stop_can_start_service(bus.blockedStopId, bus.id):
             self.begin_service(bus, bus.blockedStopId)
             return
         bus.blockedCurrentSec += dt
@@ -812,7 +858,7 @@ class Simulation:
             blocked_wait = 0.0
             if bus.blockedStopId is not None:
                 berth = self.stops[bus.blockedStopId]
-                blocked_wait = max(0.0, berth.serviceEndTime - self.time) if berth.occupiedByBusId is not None else 0.0
+                blocked_wait = max(0.0, self.next_stop_release_time(berth) - self.time) if not self.stop_has_available_berth(bus.blockedStopId) else 0.0
                 if bus.blockedStopId == stop:
                     return blocked_wait
                 stops_after_block = self.stops_ahead(bus.blockedStopId, stop)
@@ -963,7 +1009,7 @@ class Simulation:
         delay_by_bus = [b.delaySec / 60 for b in self.buses]
         stop_blocked_delay_mins = [s.totalBlockedDelaySec / 60 for s in self.stops]
         stop_occupied_mins = [s.totalOccupiedSec / 60 for s in self.stops]
-        stop_occupancy_rates = [s.totalOccupiedSec / self.time if self.time > 0 else 0 for s in self.stops]
+        stop_occupancy_rates = [s.totalOccupiedSec / (self.time * self.effective_stop_berth_capacity(s.id)) if self.time > 0 else 0 for s in self.stops]
         signals = [row["springSignal"] for row in self.springSignalLog if math.isfinite(row.get("springSignal", math.nan))]
         positive_signals = [v for v in signals if v > 0]
         negative_signals = [v for v in signals if v < 0]

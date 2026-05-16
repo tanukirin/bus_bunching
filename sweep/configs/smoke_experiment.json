@@ -21,6 +21,8 @@
     "hotspotStops": [0, 7, 14],
     "protectHotspotStops": false,
     "hotspotMultiplier": 3,
+    "stopBerthMode": "single",
+    "stopBerthCapacity": 1,
     "initialDelaySec": 0,
     "distanceThresholdStops": 1.8,
     "delayThresholdMin": 5,

@@ -142,8 +142,12 @@ def sweep_param_names(spec_or_manifest: dict[str, Any]) -> list[str]:
     sweep = spec_or_manifest.get("sweep") or []
     if isinstance(sweep, list):
         for item in sweep:
-            if isinstance(item, dict) and item.get("param"):
+            if not isinstance(item, dict):
+                continue
+            if item.get("param"):
                 names.append(str(item["param"]))
+            elif item.get("group"):
+                names.append(str(item["group"]))
     return names
 
 

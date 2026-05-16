@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import html
+import hashlib
 import subprocess
 import sys
 from collections import Counter
@@ -256,14 +257,14 @@ METRIC_GUIDE = {
     "maxDelayMin": ("運行安定", "小さいほど良い", "最大遅延。極端に遅れるバスの有無を見る。"),
     "loadStd": ("運行安定", "小さいほど良い", "バス間の乗車人数ばらつき。混雑の偏りを見る。"),
     "activeBlockedBuses": ("停留所容量", "小さいほど良い", "前車待ち中のバス数。停留所詰まりを見る。"),
-    "totalBlockedDelayMin": ("停留所容量", "小さいほど良い", "前車待ち遅延の累計。バース1制約の悪化を見る。"),
+    "totalBlockedDelayMin": ("停留所容量", "小さいほど良い", "前車待ち遅延の累計。停車可能台数制約の悪化を見る。"),
     "avgBlockedDelayPerBusMin": ("停留所容量", "小さいほど良い", "バス1台あたり前車待ち遅延。条件間比較向き。"),
     "blockEvents": ("停留所容量", "小さいほど良い", "前車待ち発生回数。詰まり頻度を見る。"),
     "avgBlockDurationMin": ("停留所容量", "小さいほど良い", "1回あたり前車待ち時間。詰まりの深刻度を見る。"),
     "maxBlockedDelayMin": ("停留所容量", "小さいほど良い", "最大前車待ち遅延。局所的な破綻を見る。"),
     "blockedDuringBunchMin": ("停留所容量", "小さいほど良い", "団子状態中の前車待ち。団子と停留所詰まりの連動を見る。"),
-    "avgStopOccupancyRate": ("停留所容量", "小さいほど良い", "停留所が占有されている割合。保持が停留所を塞がないか確認。"),
-    "totalStopOccupiedMin": ("停留所容量", "小さいほど良い", "停留所占有時間の累計。停留所負荷の総量。"),
+    "avgStopOccupancyRate": ("停留所容量", "小さいほど良い", "有効停車可能台数に対する、バス停車延べ時間の利用率。"),
+    "totalStopOccupiedMin": ("停留所容量", "小さいほど良い", "バス停車延べ時間の累計。停留所負荷の総量。"),
     "totalDwellMin": ("停留所容量", "小さいほど良い", "全バスの停車時間累計。需要処理・保持の重さを見る。"),
     "deniedPassengers": ("利用者", "小さいほど良い", "制御スキップまたは満員で、一度以上来たバスに乗れなかった人数。利用者負担の代表指標。"),
     "deniedAvgExtraMin": ("利用者", "小さいほど良い", "乗車不可を受けた人のうち実際に乗車できた人について、初回乗車不可から実乗車までの平均時間。"),
@@ -321,6 +322,8 @@ PARAM_LABELS = {
     "hotspotStops": "重要・集中停留所",
     "protectHotspotStops": "重要停留所スキップ禁止",
     "hotspotMultiplier": "集中停留所の需要倍率",
+    "stopBerthMode": "複数台停車の適用範囲",
+    "stopBerthCapacity": "同時停車可能台数",
     "initialDelaySec": "初期遅延秒",
     "distanceThresholdStops": "後続車間しきい値（停留所）",
     "delayThresholdMin": "先行遅延しきい値（分）",
@@ -1145,6 +1148,30 @@ def run_dirs(root: Path) -> list[Path]:
     return sorted([p for p in root.iterdir() if (p / "manifest.json").exists()], key=lambda p: p.stat().st_mtime, reverse=True)
 
 
+def run_option_id(path: Path) -> str:
+    return str(path.resolve())
+
+
+def run_widget_suffix(path: Path) -> str:
+    return hashlib.sha256(run_option_id(path).encode("utf-8")).hexdigest()[:16]
+
+
+def select_run(runs: list[Path]) -> Path:
+    options = [run_option_id(path) for path in runs]
+    runs_by_option = dict(zip(options, runs))
+    state_key = "selected_run_dir"
+    if st.session_state.get(state_key) not in runs_by_option:
+        st.session_state[state_key] = options[0]
+    selected = st.selectbox(
+        "実験結果",
+        options,
+        format_func=lambda value: runs_by_option[value].name,
+        key=state_key,
+        label_visibility="collapsed",
+    )
+    return runs_by_option[selected]
+
+
 def parquet_is_readable(path: Path) -> bool:
     if not path.exists() or path.stat().st_size == 0:
         return False
@@ -1198,7 +1225,8 @@ if pending_runs:
             hide_index=True,
         )
 
-run = st.selectbox("実験結果", runs, format_func=lambda p: p.name, label_visibility="collapsed")
+run = select_run(runs)
+run_key = run_widget_suffix(run)
 manifest, results, aggregate, history, derivatives = load_run(str(run))
 
 st.caption(f"seed数: {manifest.get('seed_count')}  シナリオ数: {manifest.get('scenario_count')}  worker数: {manifest.get('workers')}  計算時間: {manifest.get('elapsed_sec', 0):.1f}秒")
@@ -1210,8 +1238,9 @@ primary_metric = control_cols[0].selectbox(
     metrics,
     index=metrics.index("adjustedAvgTotalMin") if "adjustedAvgTotalMin" in metrics else 0,
     format_func=metric_select_label,
+    key=f"primary_metric_{run_key}",
 )
-mode = control_cols[1].selectbox("方式", sorted(aggregate["mode"].unique()), index=0, format_func=mode_label)
+mode = control_cols[1].selectbox("方式", sorted(aggregate["mode"].unique()), index=0, format_func=mode_label, key=f"primary_mode_{run_key}")
 
 top = aggregate[(aggregate["metric"] == primary_metric) & (aggregate["mode"] == mode)].sort_values(
     "mean",
@@ -1354,21 +1383,22 @@ with slice_tab:
         slice_metrics = sorted_metrics(list(aggregate["metric"].dropna().unique()))
         reference_row = candidate_table.iloc[0] if not candidate_table.empty else None
         controls = st.columns([1.2, 1.2, 0.8])
-        x_param = controls[0].selectbox("横軸の変数", param_cols, format_func=param_label)
+        x_param = controls[0].selectbox("横軸の変数", param_cols, format_func=param_label, key=f"slice_x_param_{run_key}")
         slice_metric = controls[1].selectbox(
             "縦軸の指標",
             slice_metrics,
             index=slice_metrics.index("adjustedAvgTotalMin") if "adjustedAvgTotalMin" in slice_metrics else 0,
             format_func=metric_select_label,
+            key=f"slice_metric_{run_key}",
         )
-        show_sd = controls[2].checkbox("標準偏差を表示", value=False)
+        show_sd = controls[2].checkbox("標準偏差を表示", value=False, key=f"slice_show_sd_{run_key}")
         available_modes = [mode for mode in ["plain", "skip", "spring"] if mode in set(aggregate["mode"].dropna())]
         st.caption("表示する方式を切り替えます。縦軸は表示中の方式だけで自動調整します。")
         mode_cols = st.columns(max(1, len(available_modes)))
         selected_modes = [
             mode
             for i, mode in enumerate(available_modes)
-            if mode_cols[i].checkbox(mode_label(mode), value=True, key=f"slice_mode_{mode}")
+            if mode_cols[i].checkbox(mode_label(mode), value=True, key=f"slice_mode_{run_key}_{mode}")
         ]
 
         fixed_params = [param for param in param_cols if param != x_param]
@@ -1385,7 +1415,7 @@ with slice_tab:
                     values,
                     index=default_index,
                     format_func=fmt_param_value,
-                    key=f"slice_fixed_{param}",
+                    key=f"slice_fixed_{run_key}_{param}",
                 )
 
         slice_rows = aggregate[aggregate["metric"].eq(slice_metric)].copy()

@@ -101,7 +101,7 @@ python -m bus_sweep.cli benchmark --config configs/default_experiment.json --see
 | 2 | 10分以上待ち人数 | `over10Min` | 小さいほど良い | 乗車できた乗客のうち、待ち時間が10分以上だった人数です。 |
 | 2 | 車間標準偏差 | `headwayStdStops` | 小さいほど良い | 終了時点の車間ばらつきです。RMSEの補助指標です。 |
 | 2 | 車間CV | `headwayCv` | 小さいほど良い | 車間標準偏差を平均車間で割った相対ばらつきです。 |
-| 2 | 平均停留所占有率 | `avgStopOccupancyRate` | 小さいほど良い | 各停留所がバスに占有されていた時間割合の平均です。 |
+| 2 | 平均停留所占有率 | `avgStopOccupancyRate` | 小さいほど良い | 各停留所の有効停車可能台数に対する、バス停車延べ時間の利用率平均です。 |
 | 2 | 総制御スキップ人数イベント | `totalControlSkipPassengerEvents` | 小さいほど良い | バス側から見た制御スキップ対象人数の延べ合計です。 |
 | 2 | 最大スプリング保持秒 | `maxSpringHoldSec` | 小さいほど現実的 | 1回あたりの最大保持秒数です。現実運用上の許容性を見ます。 |
 | 2 | 直近平均待ち時間 | `recentAvgWaitMin` | 小さいほど良い | 終了直前5分窓で乗車した人の平均待ち時間です。終盤悪化を見ます。 |
@@ -181,6 +181,30 @@ python -m bus_sweep.cli benchmark --config configs/default_experiment.json --see
 { "param": "springMaxHoldSec", "values": [60, 120, 180] }
 ```
 
+複数パラメータを連動させたい場合は、`param` の代わりに `group` を使い、`values` にパラメータ辞書の配列を指定します。各辞書は同じパラメータ集合にしてください。下の例では `boardTimeSec` と `alightTimeSec` を1つの乗降処理プロファイルとして扱うため、シナリオ数は `4 × 5 = 20` です。
+
+```json
+{
+  "sweep": [
+    {
+      "group": "dwellProcess",
+      "values": [
+        { "boardTimeSec": 2.0, "alightTimeSec": 2.0 },
+        { "boardTimeSec": 3.0, "alightTimeSec": 3.0 },
+        { "boardTimeSec": 4.0, "alightTimeSec": 4.0 },
+        { "boardTimeSec": 5.0, "alightTimeSec": 5.0 }
+      ]
+    },
+    {
+      "param": "demandMultiplier",
+      "values": [0.6, 0.8, 1.0, 1.2, 1.4]
+    }
+  ]
+}
+```
+
+`group` の値はバックアップ・リネーム時の識別名に使われます。シミュレーション本体へ渡す設定値は、各辞書内の実パラメータ名へ展開されます。3変数以上を連動させる場合も同じ形式で、1つの辞書に `boardingSetupSec` などを追加できます。
+
 ## 主なパラメータ名
 
 | 内部名 | 日本語名 |
@@ -203,6 +227,8 @@ python -m bus_sweep.cli benchmark --config configs/default_experiment.json --see
 | `hotspotStops` | 重要・集中停留所 |
 | `protectHotspotStops` | 重要停留所スキップ禁止 |
 | `hotspotMultiplier` | 集中停留所の需要倍率 |
+| `stopBerthMode` | 複数台停車の適用範囲（`single` / `all` / `hotspot`） |
+| `stopBerthCapacity` | 同時停車可能台数 |
 | `initialDelaySec` | 初期遅延秒 |
 | `distanceThresholdStops` | 後続車間しきい値（停留所） |
 | `delayThresholdMin` | 先行遅延しきい値（分） |

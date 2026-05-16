@@ -13,7 +13,13 @@ sys.path.insert(0, str(SWEEP))
 
 from bus_sweep.config import PRESETS, normalize_config, seed_sequence  # noqa: E402
 from bus_sweep.model import EventGenerator, Passenger, Simulation, run_three_modes  # noqa: E402
-from bus_sweep.runner import auto_workers, backup_existing_run_dir, rename_completed_run_dir, run_experiment  # noqa: E402
+from bus_sweep.runner import (  # noqa: E402
+    auto_workers,
+    backup_existing_run_dir,
+    rename_completed_run_dir,
+    run_experiment,
+    sweep_param_names,
+)
 from bus_sweep.stats import AggregateStats  # noqa: E402
 from bus_sweep.sweep import expand_sweep, point_values, scenario_id  # noqa: E402
 
@@ -429,6 +435,61 @@ class ModelPortTests(unittest.TestCase):
         self.assertFalse(normalize_config({"springControlSkipEnabled": "false"})["springControlSkipEnabled"])
         self.assertFalse(normalize_config({"springHoldingEnabled": 0})["springHoldingEnabled"])
 
+    def test_stop_berth_defaults_preserve_single_bus_stops(self) -> None:
+        config = normalize_config({})
+
+        self.assertEqual(config["stopBerthMode"], "single")
+        self.assertEqual(config["stopBerthCapacity"], 1)
+
+    def test_all_stop_berths_allow_capacity_then_block(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "busCount": 3, "stopBerthMode": "all", "stopBerthCapacity": 2})
+        sim = Simulation(config, "plain", [], include_history=False)
+        sim.calculate_dwell_time = lambda bus, boarded, alighted, skip: 30.0  # type: ignore[method-assign]
+        b1, b2, b3 = sim.buses[:3]
+
+        sim.handle_arrival(b1, 0)
+        sim.handle_arrival(b2, 0)
+        sim.handle_arrival(b3, 0)
+
+        self.assertEqual(set(sim.stops[0].occupiedBusEndTimes), {b1.id, b2.id})
+        self.assertEqual(b3.status, "blocked")
+        self.assertEqual(sim.stops[0].blockedQueue, [b3.id])
+
+    def test_hotspot_stop_berths_only_expand_hotspot_stops(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "hotspotStops": [0], "stopBerthMode": "hotspot", "stopBerthCapacity": 2})
+        sim = Simulation(config, "plain", [], include_history=False)
+
+        self.assertEqual(sim.effective_stop_berth_capacity(0), 2)
+        self.assertEqual(sim.effective_stop_berth_capacity(1), 1)
+
+    def test_blocked_bus_enters_released_multi_berth_without_dropping_other_bus(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "busCount": 3, "stopBerthMode": "all", "stopBerthCapacity": 2})
+        sim = Simulation(config, "plain", [], include_history=False)
+        sim.calculate_dwell_time = lambda bus, boarded, alighted, skip: 30.0  # type: ignore[method-assign]
+        b1, b2, b3 = sim.buses[:3]
+        sim.handle_arrival(b1, 0)
+        sim.handle_arrival(b2, 0)
+        sim.enter_blocked(b3, 0)
+
+        sim.release_stop(0, b1.id)
+        sim.update_blocked_bus(b3, 1.0)
+
+        self.assertNotIn(b1.id, sim.stops[0].occupiedBusEndTimes)
+        self.assertIn(b2.id, sim.stops[0].occupiedBusEndTimes)
+        self.assertIn(b3.id, sim.stops[0].occupiedBusEndTimes)
+        self.assertEqual(b3.status, "dwelling")
+        self.assertEqual(sim.stops[0].blockedQueue, [])
+
+    def test_stop_occupancy_rate_is_normalized_by_effective_berth_capacity(self) -> None:
+        config = normalize_config({**PRESETS["urban"], "stopCount": 2, "busCount": 1, "stopBerthMode": "all", "stopBerthCapacity": 2})
+        sim = Simulation(config, "plain", [], include_history=False)
+        sim.time = 100.0
+        sim.stops[0].totalOccupiedSec = 100.0
+
+        metrics = sim.compute_metrics()
+
+        self.assertEqual(metrics["stopOccupancyRates"][0], 0.5)
+
     def test_parameter_lower_bounds_prevent_invalid_runtime_values(self) -> None:
         config = normalize_config(
             {
@@ -455,6 +516,8 @@ class ModelPortTests(unittest.TestCase):
                 "springMaxHoldSec": -1,
                 "springMinHoldSec": -1,
                 "hotspotMultiplier": -1,
+                "stopBerthMode": "bad",
+                "stopBerthCapacity": -1,
             }
         )
         self.assertEqual(config["stopCount"], 2)
@@ -485,6 +548,8 @@ class ModelPortTests(unittest.TestCase):
         ]:
             self.assertEqual(config[key], 0)
         self.assertEqual(config["capacity"], 1)
+        self.assertEqual(config["stopBerthMode"], "single")
+        self.assertEqual(config["stopBerthCapacity"], 1)
 
     def test_recent_nan_is_not_averaged_as_zero(self) -> None:
         stats = AggregateStats()
@@ -507,6 +572,66 @@ class ModelPortTests(unittest.TestCase):
         )
         self.assertEqual(len(scenarios), 12)
         self.assertEqual(seed_sequence({"base": 10, "count": 3, "step": 101}), [10, 111, 212])
+
+    def test_grouped_sweep_links_multiple_params(self) -> None:
+        scenarios = expand_sweep(
+            [
+                {
+                    "group": "dwellProcess",
+                    "values": [
+                        {"boardTimeSec": 2.0, "alightTimeSec": 2.0},
+                        {"boardTimeSec": 3.0, "alightTimeSec": 2.5},
+                    ],
+                },
+                {"param": "demandMultiplier", "values": [0.8, 1.2]},
+            ]
+        )
+        self.assertEqual(len(scenarios), 4)
+        self.assertEqual(
+            scenarios[0].params,
+            {"boardTimeSec": 2.0, "alightTimeSec": 2.0, "demandMultiplier": 0.8},
+        )
+        self.assertEqual(
+            scenarios[-1].params,
+            {"boardTimeSec": 3.0, "alightTimeSec": 2.5, "demandMultiplier": 1.2},
+        )
+
+    def test_grouped_sweep_rejects_inconsistent_param_sets(self) -> None:
+        with self.assertRaisesRegex(ValueError, "same params"):
+            expand_sweep(
+                [
+                    {
+                        "group": "dwellProcess",
+                        "values": [
+                            {"boardTimeSec": 2.0, "alightTimeSec": 2.0},
+                            {"boardTimeSec": 3.0},
+                        ],
+                    }
+                ]
+            )
+
+    def test_grouped_sweep_rejects_ambiguous_param_and_group(self) -> None:
+        with self.assertRaisesRegex(ValueError, "both param and group"):
+            expand_sweep(
+                [
+                    {
+                        "param": "boardTimeSec",
+                        "group": "dwellProcess",
+                        "values": [{"boardTimeSec": 2.0, "alightTimeSec": 2.0}],
+                    }
+                ]
+            )
+
+    def test_sweep_param_names_uses_group_name_for_grouped_axes(self) -> None:
+        names = sweep_param_names(
+            {
+                "sweep": [
+                    {"group": "dwellProcess", "values": [{"boardTimeSec": 2.0, "alightTimeSec": 2.0}]},
+                    {"param": "demandMultiplier", "values": [0.8]},
+                ]
+            }
+        )
+        self.assertEqual(names, ["dwellProcess", "demandMultiplier"])
 
     def test_sweep_point_values(self) -> None:
         self.assertEqual(point_values(20, 60, 3), [20, 40, 60])

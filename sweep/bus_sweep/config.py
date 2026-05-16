@@ -30,6 +30,8 @@ PRESETS: dict[str, dict[str, Any]] = {
         "hotspotStops": [0, 7, 14],
         "hotspotMultiplier": 3,
         "protectHotspotStops": False,
+        "stopBerthMode": "single",
+        "stopBerthCapacity": 1,
         "initialDelaySec": 0,
         "distanceThresholdStops": 1.8,
         "timeThresholdMin": 3,
@@ -151,6 +153,9 @@ def normalize_config(raw: dict[str, Any]) -> dict[str, Any]:
     c["hotspotStops"] = [int(n) for n in hotspot_stops if isinstance(n, (int, float)) and 0 <= int(n) < c["stopCount"]]
     c["protectHotspotStops"] = raw.get("protectHotspotStops") is True or raw.get("protectHotspotStops") == "true"
     c["forbiddenStops"] = list(c["hotspotStops"]) if c["protectHotspotStops"] else []
+    berth_mode = str(raw.get("stopBerthMode") or c.get("stopBerthMode") or "single").strip().lower()
+    c["stopBerthMode"] = berth_mode if berth_mode in {"single", "all", "hotspot"} else "single"
+    c["stopBerthCapacity"] = max(1, int(number_with_default(c.get("stopBerthCapacity"), 1)))
     return c
 
 
