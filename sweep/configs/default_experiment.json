@@ -7,7 +7,7 @@
     "stopCount": 20,
     "busCount": 5,
     "demandMultiplier": 0.8,
-    "capacity": 36,
+    "capacity": 40,
     "baseSpeedKmh": 15,
     "stopDistanceKm": 0.3,
     "boardTimeSec": 3,
@@ -19,7 +19,7 @@
     "crowdingThreshold": 0.8,
     "randomDelayMeanSec": 28,
     "hotspotStops": [0, 7, 14],
-    "protectHotspotStops": false,
+    "protectHotspotStops": true,
     "hotspotMultiplier": 3,
     "initialDelaySec": 0,
     "distanceThresholdStops": 1.8,
@@ -42,12 +42,12 @@
   },
   "sweep": [
     {
-      "param": "springVoluntaryDeferralEnabled",
-      "values": [true, false]
+      "param": "busCount",
+      "values": [1,2,3,4,5,6,7,8,10,12,15]
     },
     {
-      "param": "springControlSkipEnabled",
-      "values": [true, false]
+      "param": "demandMultiplier",
+      "values": [0.8]
     }
   ],
   "modes": ["plain", "skip", "spring"],

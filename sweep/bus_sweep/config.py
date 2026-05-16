@@ -162,7 +162,8 @@ def extract_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_json(path: str | Path) -> dict[str, Any]:
-    with Path(path).open("r", encoding="utf-8") as f:
+    # Accept UTF-8 with or without BOM (PowerShell Set-Content often writes BOM).
+    with Path(path).open("r", encoding="utf-8-sig") as f:
         return json.load(f)
 
 

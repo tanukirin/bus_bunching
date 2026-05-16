@@ -409,44 +409,94 @@ def run_experiment(
         with (
             ParquetRowWriter(out / "results.parquet") as results_writer,
             ParquetRowWriter(out / "history.parquet") as history_writer,
-            futures.ProcessPoolExecutor(max_workers=worker_count, initializer=apply_process_priority, initargs=(priority,)) as executor,
         ):
-            future_map = {executor.submit(worker_fn, task): task for task in tasks}
-            for future in futures.as_completed(future_map):
-                payload = future.result()
-                processed_units += int(payload["seed_count"])
-                rows = payload["rows"]
-                history = payload["history"]
-                results_writer.write_rows(rows)
-                history_writer.write_rows(history)
-                result_rows_written += len(rows)
-                history_rows_written += len(history)
-                failures.extend(payload["errors"])
-                for row in rows:
-                    metrics = {k: v for k, v in row.items() if k not in {"scenario_id", "seed", "mode", *scenario_params.get(row["scenario_id"], {}).keys()}}
-                    aggregate.add_metric_row(row["scenario_id"], row["mode"], metrics)
-                for row in history:
-                    aggregate.add_history_rows(row["scenario_id"], row["mode"], [row])
-                elapsed = max(1e-9, time.perf_counter() - started)
-                now = time.perf_counter()
-                should_write_progress = (
-                    now - last_progress_write >= progress_interval_sec
-                    or processed_units >= total_units
-                    or bool(payload["errors"])
-                )
-                if should_write_progress:
-                    progress_payload = {
-                        "event": "progress",
-                        "processed_units": processed_units,
-                        "total_units": total_units,
-                        "throughput_units_per_sec": processed_units / elapsed,
-                        "scenario_id": payload["scenario_id"],
-                        "errors": len(payload["errors"]),
+            try:
+                with futures.ProcessPoolExecutor(
+                    max_workers=worker_count, initializer=apply_process_priority, initargs=(priority,)
+                ) as executor:
+                    future_map = {executor.submit(worker_fn, task): task for task in tasks}
+                    payload_iter = (future.result() for future in futures.as_completed(future_map))
+                    for payload in payload_iter:
+                        processed_units += int(payload["seed_count"])
+                        rows = payload["rows"]
+                        history = payload["history"]
+                        results_writer.write_rows(rows)
+                        history_writer.write_rows(history)
+                        result_rows_written += len(rows)
+                        history_rows_written += len(history)
+                        failures.extend(payload["errors"])
+                        for row in rows:
+                            metrics = {k: v for k, v in row.items() if k not in {"scenario_id", "seed", "mode", *scenario_params.get(row["scenario_id"], {}).keys()}}
+                            aggregate.add_metric_row(row["scenario_id"], row["mode"], metrics)
+                        for row in history:
+                            aggregate.add_history_rows(row["scenario_id"], row["mode"], [row])
+                        elapsed = max(1e-9, time.perf_counter() - started)
+                        now = time.perf_counter()
+                        should_write_progress = (
+                            now - last_progress_write >= progress_interval_sec
+                            or processed_units >= total_units
+                            or bool(payload["errors"])
+                        )
+                        if should_write_progress:
+                            progress_payload = {
+                                "event": "progress",
+                                "processed_units": processed_units,
+                                "total_units": total_units,
+                                "throughput_units_per_sec": processed_units / elapsed,
+                                "scenario_id": payload["scenario_id"],
+                                "errors": len(payload["errors"]),
+                                "time": time.time(),
+                            }
+                            append_jsonl(progress_path, progress_payload)
+                            write_json(out / "status.json", progress_payload)
+                            last_progress_write = now
+            except PermissionError as e:
+                # Some sandboxed Windows environments deny multiprocessing primitives (WinError 5).
+                # Fall back to a single-process loop so long-running sweeps can still proceed.
+                append_jsonl(
+                    progress_path,
+                    {
+                        "event": "fallback_serial",
+                        "reason": repr(e),
+                        "workers_requested": worker_count,
                         "time": time.time(),
-                    }
-                    append_jsonl(progress_path, progress_payload)
-                    write_json(out / "status.json", progress_payload)
-                    last_progress_write = now
+                    },
+                )
+                for task in tasks:
+                    payload = worker_fn(task)
+                    processed_units += int(payload["seed_count"])
+                    rows = payload["rows"]
+                    history = payload["history"]
+                    results_writer.write_rows(rows)
+                    history_writer.write_rows(history)
+                    result_rows_written += len(rows)
+                    history_rows_written += len(history)
+                    failures.extend(payload["errors"])
+                    for row in rows:
+                        metrics = {k: v for k, v in row.items() if k not in {"scenario_id", "seed", "mode", *scenario_params.get(row["scenario_id"], {}).keys()}}
+                        aggregate.add_metric_row(row["scenario_id"], row["mode"], metrics)
+                    for row in history:
+                        aggregate.add_history_rows(row["scenario_id"], row["mode"], [row])
+                    elapsed = max(1e-9, time.perf_counter() - started)
+                    now = time.perf_counter()
+                    should_write_progress = (
+                        now - last_progress_write >= progress_interval_sec
+                        or processed_units >= total_units
+                        or bool(payload["errors"])
+                    )
+                    if should_write_progress:
+                        progress_payload = {
+                            "event": "progress",
+                            "processed_units": processed_units,
+                            "total_units": total_units,
+                            "throughput_units_per_sec": processed_units / elapsed,
+                            "scenario_id": payload["scenario_id"],
+                            "errors": len(payload["errors"]),
+                            "time": time.time(),
+                        }
+                        append_jsonl(progress_path, progress_payload)
+                        write_json(out / "status.json", progress_payload)
+                        last_progress_write = now
     except KeyboardInterrupt:
         append_jsonl(progress_path, {"event": "cancelled", "processed_units": processed_units, "time": time.time()})
         raise
