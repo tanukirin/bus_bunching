@@ -115,6 +115,29 @@
       font-size: 13px;
     }
 
+    .toolbar .time-scrubber {
+      display: grid;
+      grid-template-columns: auto minmax(180px, 260px) 102px;
+      gap: 8px;
+      align-items: center;
+      padding: 5px 8px;
+      background: rgba(255,255,255,0.68);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .toolbar .time-scrubber input[type="range"] {
+      min-width: 0;
+    }
+
+    .toolbar .time-scrubber b {
+      color: var(--ink);
+      text-align: right;
+      white-space: nowrap;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 380px;
@@ -199,6 +222,42 @@
       grid-template-columns: repeat(6, 1fr);
       gap: 10px;
       margin-bottom: 16px;
+    }
+
+    .summary-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 8px;
+    }
+
+    .summary-toolbar h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .summary-toggle {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .summary-toggle button {
+      min-width: 38px;
+      min-height: 30px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .summary-toggle button.active {
+      background: var(--ink);
+      color: #fff;
     }
 
     .result-tabs {
@@ -310,6 +369,24 @@
       font-weight: 750;
       white-space: nowrap;
     }
+
+    .metric .summary-lines {
+      display: grid;
+      gap: 3px;
+      font-size: 17px;
+      line-height: 1.3;
+      white-space: normal;
+    }
+
+    .summary-line {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .summary-line.good { color: var(--green); }
+    .summary-line.warn { color: var(--yellow); }
+    .summary-line.bad { color: var(--red); }
+    .summary-line.neutral { color: var(--ink); }
 
     .metric .sub {
       color: var(--muted);
@@ -651,6 +728,12 @@
         font-size: 23px;
       }
 
+      .toolbar .time-scrubber,
+      .toolbar .speed {
+        width: 100%;
+        grid-template-columns: auto minmax(120px, 1fr) auto;
+      }
+
       .summary-grid,
       .form-grid,
       .seed-average-fields,
@@ -672,9 +755,15 @@
         <p>同じ需要・同じ乱数条件で、制御なし、距離基準スキップ制御、停留所保持＋補助スキップのスプリング法を同時比較します。</p>
       </div>
       <div class="toolbar">
+        <button id="rewindBtn" title="現在時刻から3分戻し、3方式を同じ時刻まで再計算します">3分戻す</button>
         <button id="playBtn" class="primary" title="アニメーションを再生または一時停止します">再生</button>
         <button id="stepBtn" title="アニメーションを10秒だけ進めます">10秒進める</button>
         <button id="resetBtn" title="現在の設定でシミュレーションを最初からやり直します">最初からやり直す</button>
+        <div class="time-scrubber">
+          <span>時刻</span>
+          <input id="seekRange" type="range" min="0" max="7200" step="1" value="0" title="シミュレーション時刻を移動します">
+          <b id="seekLabel">00:00 / 00:00</b>
+        </div>
         <div class="speed">
           <span>速度</span>
           <input id="speedRange" type="range" min="1" max="240" value="18">
@@ -690,6 +779,13 @@
       <button id="seedAverageTab" class="tab-button" type="button" role="tab" aria-selected="false">シード平均結果</button>
     </div>
 
+    <div class="summary-toolbar">
+      <h2>主要指標</h2>
+      <div class="summary-toggle" role="group" aria-label="主要指標の表示">
+        <button id="summaryPercentBtn" class="active" type="button" title="制御なしを基準にした変化率で表示します">％</button>
+        <button id="summaryAbsoluteBtn" type="button" title="3方式それぞれの値で表示します">値</button>
+      </div>
+    </div>
     <div id="summary" class="summary-grid"></div>
 
     <div class="grid">
@@ -752,13 +848,13 @@
                   </div>
                 </div>
                 <div class="seed-average-actions">
-                  <button id="seedAverageRunBtn" class="primary" title="指定したシード数で3方式を高速計算し、平均とSDを表示します">平均計算を実行</button>
-                  <button id="seedAverageCancelBtn" title="実行中のシード平均計算を途中で止めます" hidden>計算を中止</button>
-                  <button id="seedAverageRandomBtn" title="シード平均の基準シードだけをランダムに変更します">平均用シードを変更</button>
-                  <button id="seedAverageSyncBtn" title="右側の設定欄にある現在のランダムシードを、シード平均の基準シードへ反映します">現在のシードを反映</button>
-                  <button id="seedAverageExportJsonBtn" title="直近のシード平均結果、履歴、SD、設定をJSONで保存します">平均結果を保存</button>
-                  <button id="seedAverageExportCsvBtn" title="直近のシード平均指標とSDをCSVで保存します">平均指標を保存</button>
-                  <button id="seedAverageImportJsonBtn" title="保存したシード平均JSONを読み込み、実行直後と同じ結果表示を復元します">平均結果を読み込む</button>
+                  <button id="seedAverageRunBtn" class="primary" title="指定したシード数で3方式を高速計算し、平均とSDを表示します">シード平均を実行</button>
+                  <button id="seedAverageCancelBtn" title="実行中のシード平均計算を途中で止めます" hidden>中断</button>
+                  <button id="seedAverageRandomBtn" title="シード平均の基準シードだけをランダムに変更します">基準シードを変更</button>
+                  <button id="seedAverageSyncBtn" title="右側の設定欄にある現在のランダムシードを、シード平均の基準シードへ反映します">現在のシードを使う</button>
+                  <button id="seedAverageExportJsonBtn" title="直近のシード平均結果、履歴、SD、設定をJSONで保存します">シード平均結果を保存</button>
+                  <button id="seedAverageExportCsvBtn" title="直近のシード平均指標とSDをCSVで保存します">シード平均指標を保存</button>
+                  <button id="seedAverageImportJsonBtn" title="保存したシード平均JSONを読み込み、実行直後と同じ結果表示を復元します">シード平均結果を読み込む</button>
                   <input id="seedAverageFileInput" type="file" accept="application/json,.json" hidden>
                 </div>
                 <div class="seed-average-status-row">
@@ -791,15 +887,15 @@
           <div class="panel-body">
             <div class="charts">
               <div class="chart-box">
-                <div class="chart-title"><b>平均 / 95%待ち時間</b><span>分</span></div>
+                <div class="chart-title"><b>平均 / 上位5%待ち時間</b><span>分</span></div>
                 <canvas id="waitChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
-                <div class="chart-title"><b>補正平均 / 95%総所要時間</b><span>未完了乗客を含む 分</span></div>
+                <div class="chart-title"><b>補正平均 / 上位5%総所要時間</b><span>未完了乗客を含む 分</span></div>
                 <canvas id="totalTimeChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
-                <div class="chart-title"><b>直近5分の待ち時間</b><span>平均 / 95% 分</span></div>
+                <div class="chart-title"><b>直近5分の待ち時間</b><span>平均 / 上位5% 分</span></div>
                 <canvas id="recentWaitChart" class="chart" width="520" height="180"></canvas>
               </div>
               <div class="chart-box">
@@ -1083,6 +1179,50 @@
     const MODE_KEYS = ["plain", "skip", "spring"];
     const MODE_LABELS = { plain: "制御なし", skip: "スキップ制御", spring: "スプリング法" };
     const MODE_COLORS = { plain: "#c83f3f", skip: "#25865f", spring: "#7357c8" };
+    const METRIC_DIRECTION = { LOWER: "lower", HIGHER: "higher", NEUTRAL: "neutral" };
+    const PRIMARY_SUMMARY_METRICS = [
+      { key: "avgWaitMin", label: "待ち時間", unit: "分", digits: 1, direction: METRIC_DIRECTION.LOWER, help: "平均待ち時間" },
+      { key: "adjustedAvgTotalMin", label: "補正総所要時間", unit: "分", digits: 1, direction: METRIC_DIRECTION.LOWER, help: "未完了の乗客も含む補正値" },
+      { key: "headwayRmseStops", label: "車間RMSE", unit: "停", digits: 1, direction: METRIC_DIRECTION.LOWER, help: "車間のばらつき" },
+      { key: "maxHeadwayStops", label: "最大車間", unit: "停", digits: 1, direction: METRIC_DIRECTION.LOWER, help: "最大の空白区間" },
+      { key: "deniedAvgExtraMin", label: "乗車不可平均追加待ち", unit: "分", digits: 1, direction: METRIC_DIRECTION.LOWER, help: "乗車不可になった乗客の平均追加待ち" },
+      { key: "totalBlockedDelayMin", label: "前車待ち遅延", unit: "分", digits: 1, direction: METRIC_DIRECTION.LOWER, help: "停留所手前で詰まった累積遅延" }
+    ];
+
+    const metricNumber = (metrics, key) => {
+      const value = metrics?.[key];
+      return typeof value === "number" && Number.isFinite(value) ? value : null;
+    };
+    const formatMetricValue = (definition, value) => {
+      if (value == null) return "-";
+      const number = fmt(value, definition.digits ?? 1);
+      return definition.unit ? `${number}${definition.unit}` : number;
+    };
+    const metricChangePercent = (base, value) => {
+      if (base == null || value == null || Math.abs(base) < 1e-9) return null;
+      return (value - base) / Math.abs(base) * 100;
+    };
+    const metricImprovementPercent = (definition, base, value) => {
+      if (definition.direction === METRIC_DIRECTION.NEUTRAL || base == null || value == null || Math.abs(base) < 1e-9) {
+        return null;
+      }
+      return definition.direction === METRIC_DIRECTION.HIGHER
+        ? (value - base) / Math.abs(base) * 100
+        : (base - value) / Math.abs(base) * 100;
+    };
+    const metricTone = (definition, base, value) => {
+      const rate = metricImprovementPercent(definition, base, value);
+      if (rate == null) return "neutral";
+      if (rate >= 5) return "good";
+      if (rate <= -3) return "bad";
+      return "neutral";
+    };
+    const formatMetricChange = (base, value) => {
+      const rate = metricChangePercent(base, value);
+      if (rate == null) return "-";
+      const sign = rate > 0 ? "+" : "";
+      return `${sign}${fmt(rate, 0)}%`;
+    };
 
     const averageMetrics = (metricsList) => {
       const out = {};
@@ -1359,10 +1499,13 @@
 
     function normalizeConfig(raw) {
       const c = structuredClone(raw);
+      const numberWithDefault = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
       c.stopCount = clamp(Math.round(c.stopCount), 8, 28);
       c.busCount = clamp(Math.round(c.busCount), 3, Math.min(10, c.stopCount - 2));
       c.durationSec = Math.round(c.durationMin * 60);
-      c.baseTravelSec = Math.max(20, c.stopDistanceKm / Math.max(4, c.baseSpeedKmh) * 3600);
+      c.baseSpeedKmh = Math.max(1e-9, numberWithDefault(c.baseSpeedKmh, 15));
+      c.stopDistanceKm = Math.max(1e-9, numberWithDefault(c.stopDistanceKm, 0.3));
+      c.baseTravelSec = Math.max(1e-9, c.stopDistanceKm / c.baseSpeedKmh * 3600);
       const legacyRandomDelayScaleSec = Number.isFinite(c.randomDelaySec) ? c.randomDelaySec : 26;
       if (!Number.isFinite(c.randomDelayMeanSec)) {
         c.randomDelayMeanSec = legacyDelayScaleToMean(c.baseTravelSec, legacyRandomDelayScaleSec);
@@ -1384,7 +1527,6 @@
       c.controlEnabled = raw.controlEnabled !== false;
       c.controlMode = raw.controlMode || "none";
       c.seed = Number(raw.seed) || 1;
-      const numberWithDefault = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
       c.distanceThresholdStops = clamp(numberWithDefault(c.distanceThresholdStops, 1.8), 0.2, 3);
       c.delayThresholdMin = clamp(numberWithDefault(c.delayThresholdMin, 0), 0, 12);
       c.followerLoadLimit = clamp(numberWithDefault(c.followerLoadLimit, 0.9), 0.3, 1);
@@ -1593,7 +1735,7 @@
             targetStop: (stop + 1) % this.config.stopCount,
             status: i === 0 && this.config.initialDelaySec > 0 ? "dwelling" : "moving",
             dwellRemaining: i === 0 && this.config.initialDelaySec > 0 ? this.config.initialDelaySec : 0,
-            segmentRemaining: Math.max(1, this.config.baseTravelSec * (1 - (routePos - routeSegmentStart))),
+            segmentRemaining: Math.max(1e-9, this.config.baseTravelSec * (1 - (routePos - routeSegmentStart))),
             segmentDuration: this.config.baseTravelSec,
             segmentIndex: 0,
             onboard: [],
@@ -1633,7 +1775,7 @@
         if (advanceCounter) bus.segmentIndex++;
         const routeStart = Number.isFinite(bus.routePos) ? Math.floor(bus.routePos) : fromStop;
         const circularFrom = positiveModulo(routeStart, this.config.stopCount);
-        const duration = Math.max(18, this.config.baseTravelSec + EventGenerator.travelNoise(this.config, circularFrom, this.time));
+        const duration = Math.max(1e-9, this.config.baseTravelSec + EventGenerator.travelNoise(this.config, circularFrom, this.time));
         bus.routeSegmentStart = routeStart;
         bus.fromStop = circularFrom;
         bus.targetStop = positiveModulo(routeStart + 1, this.config.stopCount);
@@ -2056,13 +2198,10 @@
             return { skip: false, holdSec, reason: `spring hold signal=${ctx.springSignal.toFixed(2)}`, springSignal: ctx.springSignal, hFront: ctx.hFront, hBack: ctx.hBack };
           }
         }
-        const skipCandidate = ctx.springSignal > Math.max(deadband, 0.5) && ctx.hFront > H && ctx.hBack < H;
+        const skipCandidate = ctx.springSignal > deadband && ctx.hFront > H && ctx.hBack < H;
         if (!skipCandidate) return { skip: false, holdSec: 0, reason: `spring neutral signal=${ctx.springSignal.toFixed(2)}` };
         const baseDecision = this.distanceSkipDecision(bus, stop, alightingCount, true);
         if (!baseDecision.skip) return { ...baseDecision, assist: false };
-        if (!this.springSkipImprovesHeadway(bus, stop, alightingCount)) {
-          return { skip: false, holdSec: 0, reason: "spring headway cost" };
-        }
         return { ...baseDecision, assist: true, reason: `${baseDecision.reason} spring=${ctx.springSignal.toFixed(2)}`, springSignal: ctx.springSignal, hFront: ctx.hFront, hBack: ctx.hBack };
       }
 
@@ -2073,28 +2212,6 @@
         const hBack = follower ? this.routeDistanceBehind(follower, bus) : this.config.stopCount;
         const idealHeadwayStops = this.config.stopCount / this.config.busCount;
         return { leaderId: leader?.id ?? null, followerId: follower?.id ?? null, hFront, hBack, idealHeadwayStops, springSignal: hFront - hBack };
-      }
-
-      springSkipImprovesHeadway(bus, stop, alightingCount) {
-        const capacityLeft = Math.max(0, this.config.capacity - bus.onboard.length);
-        const boardedIfNormal = Math.min(capacityLeft, this.waiting[stop].length);
-        const savedDwell = this.calculateDwellTime(bus, boardedIfNormal, alightingCount, false);
-        const forwardStops = clamp(savedDwell / Math.max(1, this.config.baseTravelSec), 0, this.config.stopCount / 2);
-        if (forwardStops <= 0) return true;
-        const currentCost = this.headwayErrorCost();
-        const nextCost = this.headwayErrorCost(bus.id, forwardStops);
-        return nextCost < currentCost;
-      }
-
-      headwayErrorCost(busId = null, forwardStops = 0) {
-        const ideal = this.config.stopCount / this.config.busCount;
-        const positions = this.buses.map((b) => positiveModulo(b.pos + (b.id === busId ? forwardStops : 0), this.config.stopCount)).sort((a, b) => a - b);
-        const gaps = [];
-        for (let i = 0; i < positions.length; i++) {
-          const next = positions[(i + 1) % positions.length];
-          gaps.push((next - positions[i] + this.config.stopCount) % this.config.stopCount);
-        }
-        return sum(gaps.map((h) => (h - ideal) ** 2));
       }
 
       findFollower(bus) {
@@ -2434,6 +2551,7 @@
         this.skip = null;
         this.spring = null;
         this.activeResultView = "animation";
+        this.summaryMetricMode = "percent";
         this.seedAverageResult = null;
         this.seedAverageAbortRequested = false;
         this.running = false;
@@ -2454,6 +2572,7 @@
         $("presetSelect").value = "urban";
         applyConfigToInputs(this.config);
         this.setSettingsDirty(false);
+        $("rewindBtn").addEventListener("click", () => this.rewind(180));
         $("playBtn").addEventListener("click", () => this.toggleRun());
         $("stepBtn").addEventListener("click", () => { this.step(10); this.render(); });
         $("resetBtn").addEventListener("click", () => this.reset());
@@ -2483,6 +2602,7 @@
           this.speed = Number($("speedRange").value);
           $("speedLabel").textContent = `${this.speed}x`;
         });
+        $("seekRange").addEventListener("input", () => this.seekTo(Number($("seekRange").value)));
         $("exportJsonBtn").addEventListener("click", () => this.exportJson());
         $("exportCsvBtn").addEventListener("click", () => this.exportCsv());
         $("exportConfigBtn").addEventListener("click", () => this.exportConfig());
@@ -2490,6 +2610,8 @@
         $("configFileInput").addEventListener("change", (event) => this.importConfigFile(event));
         $("animationTab").addEventListener("click", () => this.setResultView("animation"));
         $("seedAverageTab").addEventListener("click", () => this.setResultView("seedAverage"));
+        $("summaryPercentBtn").addEventListener("click", () => this.setSummaryMetricMode("percent"));
+        $("summaryAbsoluteBtn").addEventListener("click", () => this.setSummaryMetricMode("absolute"));
         $("multiSeedBtn").addEventListener("click", () => this.setResultView("seedAverage"));
         $("seedAverageRunBtn").addEventListener("click", () => this.runSeedAverage());
         $("seedAverageCancelBtn").addEventListener("click", () => {
@@ -2514,6 +2636,22 @@
         applyParameterHelp();
         this.syncSeedAverageControls(true);
         this.renderSeedAveragePreview();
+        this.updateSummaryMetricModeButtons();
+      }
+
+      setSummaryMetricMode(mode) {
+        if (this.summaryMetricMode === mode) return;
+        this.summaryMetricMode = mode;
+        this.updateSummaryMetricModeButtons();
+        this.render();
+      }
+
+      updateSummaryMetricModeButtons() {
+        const percent = this.summaryMetricMode === "percent";
+        $("summaryPercentBtn").classList.toggle("active", percent);
+        $("summaryAbsoluteBtn").classList.toggle("active", !percent);
+        $("summaryPercentBtn").setAttribute("aria-pressed", percent ? "true" : "false");
+        $("summaryAbsoluteBtn").setAttribute("aria-pressed", percent ? "false" : "true");
       }
 
       setResultView(view) {
@@ -2593,17 +2731,21 @@
         el.classList.toggle("dirty", dirty);
       }
 
-      reset() {
-        this.clearSeedAverageResult();
-        this.running = false;
-        $("playBtn").textContent = "再生";
-        this.demandEvents = EventGenerator.demandEvents(this.config);
+      resetSimulations() {
         this.plain = new Simulation({ ...this.config, controlMode: "none" }, "plain", this.demandEvents);
         this.skip = new Simulation({ ...this.config, controlMode: "skip" }, "skip", this.demandEvents);
         this.spring = new Simulation({ ...this.config, controlMode: "spring" }, "spring", this.demandEvents);
         this.plain.sample();
         this.skip.sample();
         this.spring.sample();
+      }
+
+      reset() {
+        this.clearSeedAverageResult();
+        this.running = false;
+        $("playBtn").textContent = "再生";
+        this.demandEvents = EventGenerator.demandEvents(this.config);
+        this.resetSimulations();
         this.render();
       }
 
@@ -2628,7 +2770,11 @@
       }
 
       step(seconds) {
-        const target = Math.min(this.config.durationSec, this.plain.time + seconds);
+        this.stepTo(this.plain.time + seconds);
+      }
+
+      stepTo(seconds) {
+        const target = clamp(Number(seconds) || 0, 0, this.config.durationSec);
         while (this.plain.time < target) {
           const dt = Math.min(1, target - this.plain.time);
           this.plain.step(dt);
@@ -2637,11 +2783,41 @@
         }
       }
 
+      rewind(seconds) {
+        this.seekTo(this.plain.time - seconds);
+      }
+
+      seekTo(seconds) {
+        const target = clamp(Number(seconds) || 0, 0, this.config.durationSec);
+        this.running = false;
+        $("playBtn").textContent = "再生";
+        if (this.activeResultView !== "animation") {
+          this.activeResultView = "animation";
+          $("animationTab").classList.add("active");
+          $("animationTab").setAttribute("aria-selected", "true");
+          $("seedAverageTab").classList.remove("active");
+          $("seedAverageTab").setAttribute("aria-selected", "false");
+        }
+        this.resetSimulations();
+        this.stepTo(target);
+        this.render();
+      }
+
+      updateSeekControls() {
+        const duration = Math.max(0, this.config.durationSec);
+        const time = clamp(this.plain.time, 0, duration);
+        $("seekRange").max = String(duration);
+        $("seekRange").value = String(Math.round(time));
+        $("seekRange").setAttribute("aria-valuetext", this.timeText(time));
+        $("seekLabel").textContent = `${this.timeText(time)} / ${this.timeText(duration)}`;
+      }
+
       render() {
         const plainM = this.plain.computeMetrics();
         const skipM = this.skip.computeMetrics();
         const springM = this.spring.computeMetrics();
         $("clockBadge").textContent = this.timeText(this.plain.time);
+        this.updateSeekControls();
         $("seedBadge").textContent = `seed ${this.config.seed}`;
         $("plainBunchBadge").textContent = `団子度 ${Math.round(plainM.bunchScore)}`;
         $("skipBunchBadge").textContent = `団子度 ${Math.round(skipM.bunchScore)}`;
@@ -2704,26 +2880,34 @@
       }
 
       renderSummary(p, s, g) {
-        const improve = (m, key) => p[key] > 0 ? (p[key] - m[key]) / p[key] * 100 : 0;
-        const waitSkip = improve(s, "avgWaitMin");
-        const waitSpring = improve(g, "avgWaitMin");
-        const totalSkip = improve(s, "adjustedAvgTotalMin");
-        const totalSpring = improve(g, "adjustedAvgTotalMin");
-        const rmseSkip = improve(s, "headwayRmseStops");
-        const rmseSpring = improve(g, "headwayRmseStops");
-        const blockedSkip = improve(s, "totalBlockedDelayMin");
-        const blockedSpring = improve(g, "totalBlockedDelayMin");
-        const springCaution = g.deniedMaxExtraMin > 6 || g.multiControlSkippedPassengers > 0 || g.fullDeniedAfterControlSkipPassengers > 0 || g.totalSpringHoldMin > 18;
-        const deniedClass = Math.max(s.deniedMaxExtraMin, g.deniedMaxExtraMin) > 6 || g.deniedPassengers > s.deniedPassengers ? "warn" : "good";
-        $("summary").innerHTML = [
-          this.metric("待ち時間改善", `S ${fmt(waitSkip,0)}% / Sp ${fmt(waitSpring,0)}%`, `なし ${fmt(p.avgWaitMin)} / スキップ ${fmt(s.avgWaitMin)} / スプリング ${fmt(g.avgWaitMin)} 分`, Math.max(waitSkip, waitSpring) > 5 ? "good" : Math.max(waitSkip, waitSpring) < -3 ? "bad" : "warn"),
-          this.metric("補正総所要時間改善", `S ${fmt(totalSkip,0)}% / Sp ${fmt(totalSpring,0)}%`, `なし ${fmt(p.adjustedAvgTotalMin)} / スキップ ${fmt(s.adjustedAvgTotalMin)} / スプリング ${fmt(g.adjustedAvgTotalMin)} 分`, Math.max(totalSkip, totalSpring) > 5 ? "good" : Math.max(totalSkip, totalSpring) < -3 ? "bad" : "warn"),
-          this.metric("RMSE改善(団子指標)", `S ${fmt(rmseSkip,0)}% / Sp ${fmt(rmseSpring,0)}%`, `車間RMSE ${fmt(p.headwayRmseStops)} → ${fmt(s.headwayRmseStops)} / ${fmt(g.headwayRmseStops)}`, Math.max(rmseSkip, rmseSpring) > 5 ? "good" : "warn"),
-          this.metric("最大車間", `${fmt(g.maxHeadwayStops)}停`, `なし ${fmt(p.maxHeadwayStops)} / スキップ ${fmt(s.maxHeadwayStops)}停`, g.maxHeadwayStops <= s.maxHeadwayStops ? "good" : "warn"),
-          this.metric("前車待ち削減", `S ${fmt(blockedSkip,0)}% / Sp ${fmt(blockedSpring,0)}%`, `総 ${fmt(p.totalBlockedDelayMin)} → ${fmt(s.totalBlockedDelayMin)} / ${fmt(g.totalBlockedDelayMin)} 分`, Math.max(blockedSkip, blockedSpring) > 8 ? "good" : "warn"),
-          this.metric("乗車不可", `S ${fmt(s.deniedPassengers,0)} / Sp ${fmt(g.deniedPassengers,0)}人`, `最大追加待ち ${fmt(s.deniedMaxExtraMin)} / ${fmt(g.deniedMaxExtraMin)} 分`, deniedClass),
-          this.metric("スプリング介入", `${fmt(g.springInterventionCount,0)}回`, `保持 ${fmt(g.totalSpringHoldMin)}分 / 補助スキップ ${fmt(g.springControlSkipAssistEvents,0)}回`, springCaution ? "warn" : "good")
-        ].join("");
+        $("summary").innerHTML = PRIMARY_SUMMARY_METRICS
+          .map((definition) => this.summaryMetric(definition, p, s, g))
+          .join("");
+      }
+
+      summaryMetric(definition, p, s, g) {
+        const plain = metricNumber(p, definition.key);
+        const skip = metricNumber(s, definition.key);
+        const spring = metricNumber(g, definition.key);
+        const valueText = (mode, value) => mode === "absolute"
+          ? formatMetricValue(definition, value)
+          : formatMetricChange(plain, value);
+        const skipTone = metricTone(definition, plain, skip);
+        const springTone = metricTone(definition, plain, spring);
+        const lines = this.summaryMetricMode === "absolute"
+          ? [
+              `<span class="summary-line neutral">なし ${formatMetricValue(definition, plain)}</span>`,
+              `<span class="summary-line ${skipTone}">S ${valueText("absolute", skip)}</span>`,
+              `<span class="summary-line ${springTone}">Sp ${valueText("absolute", spring)}</span>`
+            ]
+          : [
+              `<span class="summary-line ${skipTone}">S ${valueText("percent", skip)}</span>`,
+              `<span class="summary-line ${springTone}">Sp ${valueText("percent", spring)}</span>`
+            ];
+        const sub = this.summaryMetricMode === "absolute"
+          ? definition.help
+          : `${definition.help} / 制御なし比`;
+        return `<div class="metric"><div class="label">${definition.label}</div><div class="value summary-lines">${lines.join("")}</div><div class="sub">${sub}</div></div>`;
       }
 
       metric(label, value, sub, cls) {
@@ -2735,7 +2919,7 @@
           ["平均待ち", `${fmt(m.avgWaitMin)}分`],
           ["直近待ち", `${fmt(m.recentAvgWaitMin)}分`],
           ["補正総所要", `${fmt(m.adjustedAvgTotalMin)}分`],
-          ["95%待ち", `${fmt(m.p95WaitMin)}分`],
+          ["上位5%待ち", `${fmt(m.p95WaitMin)}分`],
           ["最小車間", `${fmt(m.minHeadwayStops)}停`],
           ["最大車間", `${fmt(m.maxHeadwayStops)}停`],
           ["RMSE", `${fmt(m.headwayRmseStops)}停`],
@@ -2854,25 +3038,25 @@
           { name: "なし平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.avgWaitMin]) },
           { name: "スキップ平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.avgWaitMin]) },
           { name: "スプリング平均", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.avgWaitMin]) },
-          { name: "なし95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
-          { name: "スキップ95%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
-          { name: "スプリング95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true }
+          { name: "なし上位5%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
+          { name: "スキップ上位5%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true },
+          { name: "スプリング上位5%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.p95WaitMin]), dash: true }
         ], null, durationMin);
         this.drawLineChart($("totalTimeChart"), [
           { name: "なし補正平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.adjustedAvgTotalMin]) },
           { name: "スキップ補正平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.adjustedAvgTotalMin]) },
           { name: "スプリング補正平均", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.adjustedAvgTotalMin]) },
-          { name: "なし補正95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true },
-          { name: "スキップ補正95%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true },
-          { name: "スプリング補正95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true }
+          { name: "なし補正上位5%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true },
+          { name: "スキップ補正上位5%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true },
+          { name: "スプリング補正上位5%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.adjustedP95TotalMin]), dash: true }
         ], null, durationMin);
         this.drawLineChart($("recentWaitChart"), [
           { name: "なし直近平均", color: "#c83f3f", data: plainHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
           { name: "スキップ直近平均", color: "#25865f", data: skipHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
           { name: "スプリング直近平均", color: "#7357c8", data: springHistory.map((h) => [h.t/60, h.recentAvgWaitMin]) },
-          { name: "なし直近95%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
-          { name: "スキップ直近95%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
-          { name: "スプリング直近95%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true }
+          { name: "なし直近上位5%", color: "#a12d2d", data: plainHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
+          { name: "スキップ直近上位5%", color: "#166f4b", data: skipHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true },
+          { name: "スプリング直近上位5%", color: "#5a43a6", data: springHistory.map((h) => [h.t/60, h.recentP95WaitMin]), dash: true }
         ], null, durationMin);
         this.drawLineChart($("headwayChart"), modeSeries("minHeadwayStops"), null, durationMin);
         this.drawLineChart($("maxHeadwayChart"), modeSeries("maxHeadwayStops"), null, durationMin);
@@ -2982,15 +3166,15 @@
         const rows = [
           ["平均待ち時間 分", "avgWaitMin"],
           ["直近5分 平均待ち 分", "recentAvgWaitMin"],
-          ["直近5分 95%待ち 分", "recentP95WaitMin"],
+          ["直近5分 上位5%待ち 分", "recentP95WaitMin"],
           ["直近5分 乗車人数", "recentBoardedPassengers"],
           ["中央値待ち時間 分", "medianWaitMin"],
-          ["95%待ち時間 分", "p95WaitMin"],
+          ["上位5%待ち時間 分", "p95WaitMin"],
           ["最大待ち時間 分", "maxWaitMin"],
           ["平均総所要時間 分", "avgTotalMin"],
-          ["95%総所要時間 分", "p95TotalMin"],
+          ["上位5%総所要時間 分", "p95TotalMin"],
           ["補正平均総所要時間 分", "adjustedAvgTotalMin"],
-          ["補正95%総所要時間 分", "adjustedP95TotalMin"],
+          ["補正上位5%総所要時間 分", "adjustedP95TotalMin"],
           ["発生乗客数", "allPassengers"],
           ["完了乗客数", "completed"],
           ["乗車中人数", "onboardNow"],
